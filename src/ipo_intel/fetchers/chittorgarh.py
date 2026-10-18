@@ -30,6 +30,29 @@ def find_ipo_links(html: str) -> list[tuple[str, str]]:
     return out
 
 
+def parse_active_ipo_names(html: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    names: list[str] = []
+    seen: set[str] = set()
+    for paragraph in soup.select(".content-text p"):
+        description = T.norm(paragraph.get_text(" ", strip=True))
+        if not (
+            "upcoming mainboard ipos in india" in description
+            or "current mainboard active ipos" in description
+        ):
+            continue
+        for link in paragraph.find_all("a", href=True):
+            if not urlparse(link["href"]).path.startswith("/ipo/"):
+                continue
+            label = link.get("title") or link.get_text(" ", strip=True)
+            name = re.sub(r"\s+IPO$", "", label.strip(), flags=re.I)
+            key = T.norm(name)
+            if name and key not in seen:
+                names.append(name)
+                seen.add(key)
+    return names
+
+
 def best_link(name: str, links: list[tuple[str, str]]) -> str | None:
     for text, href in links:
         if T.name_matches(name, text):
@@ -363,6 +386,16 @@ class ChittorgarhFetcher(Fetcher):
 
     def __init__(self, http: PoliteSession | None = None):
         self.http = http or PoliteSession()
+
+    def fetch_active_ipo_names(self) -> list[str]:
+        html = self.http.get(config.URLS["ipo_list"])
+        names = parse_active_ipo_names(html)
+        if not names:
+            raise FetchError(
+                "no active or upcoming mainboard IPO names found on "
+                f"{config.URLS['ipo_list']}; the page layout may have changed"
+            )
+        return names
 
     def _page(self, ipo_name: str) -> str:
         html = self.http.get(config.URLS["ipo_list"])

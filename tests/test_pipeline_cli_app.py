@@ -291,8 +291,9 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     assert at.checkbox[0].value is False
-    at.text_area[0].input("sub_retail=2.4").run()
-    at.button[0].click().run()
+    at.text_input[0].input("Jio Platforms")
+    at.text_area[0].input("sub_retail=2.4")
+    at.form_submit_button[0].click().run()
     assert not at.exception
     assert "Short term" in [s.value for s in at.subheader]
     metric_labels = {metric.label for metric in at.metric}
@@ -324,10 +325,22 @@ def test_web_app_honors_deployment_secret_to_disable_live_fetch(monkeypatch):
 
 
 def test_web_app_defaults_to_live_fetch_without_deployment_secret(monkeypatch):
+    import streamlit as st
+
+    from ipo_intel.fetchers import ChittorgarhFetcher
+
     monkeypatch.delenv("IPO_ENABLE_SCRAPERS", raising=False)
+    monkeypatch.setattr(
+        ChittorgarhFetcher,
+        "fetch_active_ipo_names",
+        lambda self: ["Jio Platforms", "Paras Healthcare"],
+    )
+    st.cache_data.clear()
 
     at = AppTest.from_file(APP, default_timeout=60).run()
 
     assert not at.exception
     assert at.checkbox[0].value is True
     assert at.checkbox[0].disabled is False
+    assert at.selectbox[0].label == "IPO name"
+    assert at.selectbox[0].options == ["Jio Platforms", "Paras Healthcare"]

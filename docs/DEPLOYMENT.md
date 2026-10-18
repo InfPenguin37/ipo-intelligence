@@ -17,7 +17,8 @@ local training database or model download is required for inference.
 
    With this setting, the app uses bundled seed data and user-entered overrides, and disables the live-fetch checkbox.
    Omit the setting or use `"1"` only if you want visitors to trigger public IPOWatch and Chittorgarh requests. Check
-   those sites' terms and consider the request rate before enabling live fetching on a public app.
+   those sites' terms and consider the request rate before enabling live fetching on a public app. IPO name suggestions
+   are loaded from Chittorgarh's active and upcoming mainboard IPO list while live fetching is enabled.
 6. Deploy. Streamlit installs the root `requirements.txt` and provides a `*.streamlit.app` URL.
 
 The root requirements file installs this project in editable mode, so the package includes the tracked pretrained

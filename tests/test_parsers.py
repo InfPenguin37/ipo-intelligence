@@ -11,6 +11,7 @@ from ipo_intel.fetchers.chittorgarh import (
     ChittorgarhFetcher,
     best_link,
     find_ipo_links,
+    parse_active_ipo_names,
     parse_financials,
     parse_issue_objects,
     parse_valuation,
@@ -63,6 +64,50 @@ def test_read_tables_parses_html_table():
     tables = T.read_tables("<table><tr><th>Name</th></tr><tr><td>IPO</td></tr></table>")
     assert len(tables) == 1
     assert tables[0].iloc[0, 0] == "IPO"
+
+
+def test_parse_active_ipo_names_only_returns_current_and_upcoming_issues():
+    html = """
+    <div class="content-text">
+      <p>The upcoming mainboard IPOs in India this week are
+        <a href="/ipo/paras-ipo/" title="Paras Healthcare IPO">Paras Healthcare IPO</a>
+        <a href="/ipo/jio-ipo/" title="Jio Platforms IPO">Jio Platforms IPO</a>
+      </p>
+      <p>The current mainboard active IPOs are
+        <a href="/ipo/sahajanand-ipo/" title="Sahajanand Medical Technologies IPO">
+          Sahajanand Medical Technologies IPO
+        </a>
+      </p>
+      <p>Recently listed IPOs:
+        <a href="/ipo/old-ipo/" title="Old Company IPO">Old Company IPO</a>
+      </p>
+    </div>
+    """
+
+    assert parse_active_ipo_names(html) == [
+        "Paras Healthcare",
+        "Jio Platforms",
+        "Sahajanand Medical Technologies",
+    ]
+
+
+def test_fetch_active_ipo_names_uses_mainboard_page_and_reports_layout_changes():
+    class FakeHttp:
+        def get(self, url):
+            assert url.endswith("/82/mainboard/")
+            return (
+                '<div class="content-text"><p>The upcoming mainboard IPOs in India are '
+                '<a href="/ipo/jio/" title="Jio Platforms IPO">Jio Platforms IPO</a></p></div>'
+            )
+
+    assert ChittorgarhFetcher(FakeHttp()).fetch_active_ipo_names() == ["Jio Platforms"]
+
+    class EmptyHttp:
+        def get(self, url):
+            return "<p>Changed page</p>"
+
+    with pytest.raises(FetchError, match="no active or upcoming mainboard IPO names"):
+        ChittorgarhFetcher(EmptyHttp()).fetch_active_ipo_names()
 
 
 def test_details_fresh_issue():
@@ -218,7 +263,7 @@ def test_chittorgarh_fetches_subscription_from_dedicated_ipo_page():
 
         def get(self, url):
             self.urls.append(url)
-            if url.endswith("/ipo-in-india-list-main-board-sme/82/"):
+            if url.endswith("/ipo-in-india-list-main-board-sme/82/mainboard/"):
                 return '<a href="/ipo/zetwerk-ipo/3091/">Zetwerk IPO</a>'
             if url.endswith("/ipo/zetwerk-ipo/3091/"):
                 return profile
@@ -239,6 +284,7 @@ def test_chittorgarh_fetches_subscription_from_dedicated_ipo_page():
 def test_gmp_row_matching_ignores_status_suffix():
     out = parse_gmp(T.read_tables(GMP), "Jio Platforms")
     assert out == {"gmp_current": 220.0, "price_band_high": 1119.0}
+    assert parse_gmp(T.read_tables(GMP), "Jio Platforms Ltd.") == out
     assert parse_gmp(T.read_tables(GMP), "Nonexistent Corp") == {}
 
 

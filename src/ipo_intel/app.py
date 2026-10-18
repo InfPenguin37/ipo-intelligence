@@ -9,6 +9,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 
 from ipo_intel import pipeline
 from ipo_intel.config import scrapers_enabled
+from ipo_intel.fetchers import ChittorgarhFetcher, FetchError
 from ipo_intel.report import DISCLAIMER
 from ipo_intel.schema import ALL_KEYS, MARKET_KEYS
 
@@ -64,6 +65,11 @@ def _live_fetch_enabled() -> bool:
     except StreamlitSecretNotFoundError:
         return True
     return setting is None or str(setting).strip() == "1"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _active_ipo_names() -> tuple[str, ...]:
+    return tuple(ChittorgarhFetcher().fetch_active_ipo_names())
 
 
 st.markdown(
@@ -143,24 +149,8 @@ st.markdown(
 live_fetch_enabled = _live_fetch_enabled()
 
 with st.sidebar:
-    st.markdown('<div class="eyebrow">IPO INTELLIGENCE</div>', unsafe_allow_html=True)
     st.title("Research desk")
     st.caption("Build a listing outlook from live signals, your inputs, and the trained model.")
-
-    with st.form("analysis_form"):
-        name = st.text_input("IPO name", value="Jio Platforms")
-        live = st.checkbox(
-            "Fetch live data",
-            value=live_fetch_enabled,
-            disabled=not live_fetch_enabled,
-            help=(
-                "Fetch IPOWatch GMP and overview data, plus Chittorgarh issue, subscription and financials."
-            ),
-        )
-        submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
-
-    if not live_fetch_enabled:
-        st.caption("Live fetching is disabled by the deployment setting.")
 
     with st.expander("Manual overrides", expanded=False):
         overrides_text = st.text_area(
@@ -177,9 +167,42 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+ipo_names: tuple[str, ...] = ()
+suggestion_error: str | None = None
+if live_fetch_enabled:
+    try:
+        ipo_names = _active_ipo_names()
+    except FetchError as error:
+        suggestion_error = str(error)
+
+if suggestion_error:
+    st.error(f"Could not load IPO suggestions from Chittorgarh: {suggestion_error}")
+elif not live_fetch_enabled:
+    st.info("IPO suggestions require live scraping, which is disabled; enter a name manually.")
+
+with st.form("analysis_form"):
+    if ipo_names:
+        name = st.selectbox(
+            "IPO name",
+            options=ipo_names,
+            index=None,
+            placeholder="Search active and upcoming mainboard IPOs",
+        )
+    else:
+        name = st.text_input("IPO name", placeholder="Enter an IPO name")
+    live = st.checkbox(
+        "Fetch live data",
+        value=live_fetch_enabled,
+        disabled=not live_fetch_enabled,
+        help=(
+            "Fetch IPOWatch GMP and overview data, plus Chittorgarh issue, subscription and financials."
+        ),
+    )
+    submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
+
 if submitted:
-    if not name.strip():
-        st.error("Enter an IPO name to run an analysis.")
+    if not name or not name.strip():
+        st.error("Select an IPO name to run an analysis." if ipo_names else "Enter an IPO name to run an analysis.")
         st.stop()
     try:
         overrides = pipeline.parse_overrides(overrides_text.splitlines())

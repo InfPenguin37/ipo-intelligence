@@ -26,7 +26,8 @@ MIN_REQUEST_DELAY_S = float(os.environ.get("IPO_REQUEST_DELAY_S", "2.5"))
 URLS = {
     "gmp": os.environ.get("IPO_GMP_URL", "https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/"),
     "ipo_list": os.environ.get(
-        "IPO_LIST_URL", "https://www.chittorgarh.com/report/ipo-in-india-list-main-board-sme/82/"
+        "IPO_LIST_URL",
+        "https://www.chittorgarh.com/report/ipo-in-india-list-main-board-sme/82/mainboard/",
     ),
     "perf_tracker": os.environ.get(
         "IPO_PERF_URL",
