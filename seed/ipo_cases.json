@@ -1,0 +1,51 @@
+{
+  "_notes": "Facts gathered from web search on 2026-10-18. GMP = grey market premium in Rs/share. 'open' = GMP around issue-open day, 'final' = GMP on the eve of listing. Actuals are listing-day outcomes plus latest price vs issue price.",
+  "backtest": {
+    "NSE (Sep 2026)": {
+      "issue_size_cr": 22562, "structure": "OFS", "price_band_high": 1785,
+      "gmp": {"open": 145, "peak": 145, "final": 40},
+      "subscription": {"overall": 5.71, "qib": 12.68, "nii": 6.55, "retail": 1.39},
+      "actual": {"listing_gain_pct": 0.84, "day1_close_pct": 1.85, "latest_pct": -1.25, "latest_note": "Rs 1,762.65 on 14 Oct (about -2.5% on 2 Oct)"}
+    },
+    "Hyundai Motor India (Oct 2024)": {
+      "issue_size_cr": 27870, "structure": "OFS", "price_band_high": 1960,
+      "gmp": {"open": 75, "peak": 75, "final": 75},
+      "subscription": {"overall": 2.37, "qib": 6.97, "nii": 0.60, "retail": 0.50},
+      "actual": {"listing_gain_pct": -1.32, "day1_close_pct": -7.17, "latest_pct": null, "latest_note": "not pulled"}
+    },
+    "SBI Funds Management (Jul 2026)": {
+      "issue_size_cr": 9813, "structure": "OFS", "price_band_high": 574,
+      "gmp": {"open": 92, "peak": 140, "final": 105},
+      "subscription": {"overall": 41.73, "qib": 140.11, "nii": 22.47, "retail": 3.45},
+      "actual": {"listing_gain_pct": 6.85, "day1_close_pct": 6.2, "latest_pct": -1.45, "latest_note": "tracker shows -0.4% to -2.5%"}
+    },
+    "ICICI Pru AMC (Dec 2025)": {
+      "issue_size_cr": 10603, "structure": "OFS", "price_band_high": 2165,
+      "gmp": {"open": 240, "peak": 360, "final": 360},
+      "subscription": {"overall": 39.17, "qib": null, "nii": null, "retail": null},
+      "actual": {"listing_gain_pct": 20.09, "day1_close_pct": null, "latest_pct": null, "latest_note": "not pulled"}
+    }
+  },
+  "target": {
+    "Jio Platforms (Oct 2026)": {
+      "issue_size_cr": 30213, "structure": "Fresh (no OFS)", "price_band_high": 1119,
+      "gmp": {"open": 172, "peak": 224, "final": 221},
+      "subscription": null,
+      "fundamentals": {
+        "pat_cagr_fy24_26_pct": 18.43,
+        "latest_qtr_pat_growth_pct": 9.2,
+        "ebitda_margin_pct": 51.91,
+        "roce_pct": 10.76,
+        "pe": 33.3,
+        "best_peer_pe": 40.71,
+        "capex_intensity_start_pct": 48.8,
+        "capex_intensity_end_pct": 23.3,
+        "proceeds_to_debt_repay_pct": 91.0,
+        "single_subsidiary_ebitda_share_pct": 94.88,
+        "market_rank": 1,
+        "tariff_hike_dependent": true,
+        "governance_score": 8
+      }
+    }
+  }
+}
