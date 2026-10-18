@@ -100,7 +100,9 @@ missing values without replacing populated history.
 
 Historical **GMP** is the hard part: public pages rarely keep it. Rows without GMP still train (missing values are
 handled), but the GMP-to-listing-gain relationship is learned only from rows that have it. Supplying a CSV with
-`gmp_open`, `gmp_peak`, `gmp_final` columns will improve the models the most. See `docs/ML_PLAN.md`.
+`gmp_open`, `gmp_peak`, `gmp_final` columns will improve the models the most. See
+[`docs/ML_TECHNIQUES.md`](docs/ML_TECHNIQUES.md) for the current methods and limitations, and
+[`docs/ML_PLAN.md`](docs/ML_PLAN.md) for the roadmap.
 
 Training uses `listing_open_gain_pct` only. The workbook's `List Price` and InvestorGain's `Listing Price`
 are mapped to opening price; `Listing Day Close` is stored separately as `listing_close_gain_pct`. Legacy
@@ -136,7 +138,8 @@ src/ipo_intel/  scoring/  rule-based short and long-term scores
                 pipeline.py  merge sources (scrapers > own GMP history > seed > manual file > overrides)
                 cli.py, app.py, store.py (SQLite), schema.py (fields + provenance)
 seed/           hand-collected facts: 4 past IPOs and Jio (web research, 2026-10-18)
-docs/ML_PLAN.md  the modelling plan and its limits
+docs/ML_TECHNIQUES.md  implemented short-term models, evaluation and limitations
+docs/ML_PLAN.md        the modelling plan and its limits
 tests/          tests (synthetic data for ML and parsers)
 ```
 
