@@ -4,7 +4,7 @@ import pytest
 
 from ipo_intel import config
 from ipo_intel.pipeline import flatten_case
-from ipo_intel.scoring import est_listing_gain, long_term, short_verdict
+from ipo_intel.scoring import est_listing_gain, listing_gain_breakdown, long_term, short_verdict
 from ipo_intel.scoring import backtest
 
 
@@ -19,6 +19,21 @@ def test_missing_inputs_give_nan_and_insufficient_data():
     g = est_listing_gain(None, 100, 10)
     assert g != g
     assert short_verdict(g) == "INSUFFICIENT DATA"
+
+
+def test_listing_gain_breakdown_matches_heuristic_factors():
+    result = listing_gain_breakdown(10603, 2165, 360, 240, 1.5)
+
+    assert result["gmp_pct"] == pytest.approx(16.6281755)
+    assert result["gmp_ratio"] == pytest.approx(1.5)
+    assert result["size_factor"] == 0.9
+    assert result["demand_factor"] == 0.85
+    assert result["trend_factor"] == 1.0
+    assert result["surge_adjustment"] is True
+    assert result["estimate_pct"] == pytest.approx(12.7205543)
+    assert est_listing_gain(10603, 2165, 360, 240, 1.5) == pytest.approx(
+        result["estimate_pct"]
+    )
 
 
 def test_verdict_bands():

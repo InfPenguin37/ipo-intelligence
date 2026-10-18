@@ -49,12 +49,10 @@ The app and `ipo run` fetch current public GMP and subscription data by default.
 the app or use `ipo run jio --no-scrape` to skip fetching for one analysis. To disable live fetching entirely,
 set `IPO_ENABLE_SCRAPERS=0` before starting the app or CLI.
 
-For Screener fundamentals, paste a direct company page URL in the app's **Screener company URL** field or pass
-`--screener-url https://www.screener.in/company/.../consolidated/` to `ipo run`. Search is not automated because
-Screener's `robots.txt` disallows its search query URLs. The fetcher reads supported financial tables from the
-provided company page: the latest annual operating margin and ROCE, three-year PAT CAGR when all four annual
-profits are positive, and latest-quarter PAT growth when both comparable quarters are profitable. Other or
-non-meaningful values (such as growth rates spanning losses) are omitted.
+For Screener fundamentals, pass a direct company page URL with
+`--screener-url https://www.screener.in/company/.../consolidated/` to `ipo run`. The app does not expose a
+Screener URL field. Automated Screener search is not supported; its search query URLs are disallowed by
+`robots.txt`.
 
 The Chittorgarh IPO page also supplies annual income, EBITDA and PAT trends, comparable-quarter PAT trends,
 borrowings/net-worth context and repayment objects. IPOWatch's linked IPO overview supplies its debt-repayment
@@ -105,9 +103,18 @@ handled), but the GMP-to-listing-gain relationship is learned only from rows tha
 
 ## How the verdict is produced
 
-* **Short term:** rule-based estimate (GMP, discounted for issue size, retail demand and GMP trend). Once models are
-  trained, the ML estimate (with an 80% band) becomes the headline for the tier it applies to. Large IPOs (>= 5,000 cr by
-  default) use a heavily shrunk model because only about 15 exist.
+* **Raw GMP-implied return:** latest grey-market premium divided by the offer price. It is an unofficial market
+  indicator, not a prediction of listing return.
+* **Short-term heuristic:** starts with the raw GMP-implied return, then multiplies by issue-size, retail-demand
+  and GMP-trend factors. If retail subscription is unavailable, it assumes 1.5x (the 1-3x demand band); if opening
+  GMP is unavailable, the trend factor is neutral. A sharp GMP rise (latest/open >= 1.4x) raises the size factor
+  to at least 90%.
+* **Short-term ML:** below the ₹5,000 Cr default cutoff, three scikit-learn `HistGradientBoostingRegressor` models
+  estimate the 10th, 50th and 90th percentiles; `RidgeCV` is retained as an evaluation baseline. At or above the
+  cutoff, a custom one-parameter `LargeModel` estimates the fraction of a demand/trend-adjusted GMP move that
+  survives to listing, shrinking the coefficient toward a prior. Its range is based on leave-one-out residual
+  standard deviation. The median/central estimate becomes the headline when a tier model is available; the
+  small-tier interval is an 80% quantile range, not a guarantee.
 * **Long term:** weighted 0-100 score on growth, margins, ROCE, valuation versus peers, balance sheet, moat and
   concentration/regulatory risk. Rule-based on purpose; there are too few IPOs with long outcomes for ML.
 

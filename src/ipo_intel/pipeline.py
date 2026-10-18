@@ -9,7 +9,13 @@ from .fetchers import ChittorgarhFetcher, FetchError, GmpFetcher, PoliteSession,
 from .fetchers.tables import name_matches
 from .ml import load_models, predict_one
 from .schema import ALL_KEYS, FUNDAMENTAL_CONTEXT_KEYS, FUNDAMENTAL_KEYS, Snapshot, coerce
-from .scoring import est_listing_gain, gmp_pct, long_term, scenarios, short_verdict
+from .scoring import (
+    gmp_pct,
+    listing_gain_breakdown,
+    long_term,
+    scenarios,
+    short_verdict,
+)
 from .store import Store
 
 
@@ -193,9 +199,25 @@ def analyse(snap: Snapshot, models="auto") -> dict:
         size, price, final = v["issue_size_cr"], v["price_band_high"], v["gmp_final"]
         known = v.get("sub_retail") is not None
         # Until retail subscription is known, assume the base case (retail 1-3x) rather than "no information".
-        heur = est_listing_gain(size, price, final, v.get("gmp_open"), v["sub_retail"] if known else 1.5)
+        retail_assumption = v["sub_retail"] if known else 1.5
+        breakdown = listing_gain_breakdown(
+            size,
+            price,
+            final,
+            v.get("gmp_open"),
+            retail_assumption,
+        )
+        heur = breakdown["estimate_pct"]
         rep["gmp_pct"] = round(gmp_pct(final, price), 1)
         rep["heuristic_gain"] = round(heur, 1)
+        rep["heuristic_breakdown"] = breakdown
+        rep["heuristic_retail_used"] = retail_assumption
+        rep["heuristic_retail_assumed"] = not known
+        rep["heuristic_gmp_open"] = v.get("gmp_open")
+        rep["gmp_explanation"] = {
+            "gmp_rupees": final,
+            "offer_price_rupees": price,
+        }
         rep["subscription_known"] = known
         ml = predict_one(models, v)
         rep["ml"] = ml

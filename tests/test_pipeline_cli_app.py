@@ -197,6 +197,8 @@ def test_cli_run_backtest_and_errors(monkeypatch, capsys):
     assert cli.main(["run", "jio", "--no-scrape"]) == 0
     out = capsys.readouterr().out
     assert "SHORT TERM" in out and "LONG TERM" in out and "not investment advice" in out
+    assert "unofficial indicator, not a forecast" in out
+    assert "issue-size factor" in out and "retail-demand factor" in out and "GMP-trend factor" in out
     assert cli.main(["backtest"]) == 0
     assert cli.main(["run", "jio", "--set", "bogus=1"]) == 2
     assert cli.main(["collect-history"]) == 2  # explicitly disabled for this test
@@ -239,6 +241,8 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
     assert any("Score" in m.label for m in at.metric)
     assert "#### Reported subscription" in [s.value for s in at.markdown]
     assert "#### GMP history" in [s.value for s in at.markdown]
+    assert [field.label for field in at.text_input] == ["IPO name"]
+    assert any("unofficial grey-market premium" in caption.value for caption in at.caption)
     assert any(
         "Source" in str(dataframe.proto) and "Snapshot time (UTC)" in str(dataframe.proto)
         for dataframe in at.dataframe

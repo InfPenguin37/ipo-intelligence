@@ -47,6 +47,36 @@ def gmp_pct(gmp_final: float, price_band_high: float) -> float:
     return gmp_final / price_band_high * 100
 
 
+def listing_gain_breakdown(
+    size_cr: float,
+    price_band_high: float,
+    gmp_final: float,
+    gmp_open: float | None = None,
+    sub_retail: float | None = None,
+    surge_rule: bool = True,
+) -> dict | None:
+    """Return the factors behind the rule-based estimate, or None if inputs are missing."""
+    if _missing(size_cr) or _missing(price_band_high) or _missing(gmp_final):
+        return None
+    ratio = gmp_ratio(gmp_final, gmp_open)
+    size_factor = size_haircut(size_cr)
+    surge_adjustment = surge_rule and ratio >= 1.4 and size_factor < 0.90
+    if surge_adjustment:
+        size_factor = 0.90
+    demand = demand_factor(sub_retail)
+    trend = trend_factor(ratio)
+    raw_pct = gmp_pct(gmp_final, price_band_high)
+    return {
+        "gmp_pct": raw_pct,
+        "gmp_ratio": ratio,
+        "size_factor": size_factor,
+        "demand_factor": demand,
+        "trend_factor": trend,
+        "surge_adjustment": surge_adjustment,
+        "estimate_pct": raw_pct * size_factor * demand * trend,
+    }
+
+
 def est_listing_gain(
     size_cr,
     price_band_high,
@@ -56,14 +86,15 @@ def est_listing_gain(
     surge_rule: bool = True,
 ) -> float:
     """Estimated listing gain in %, or NaN if the essentials are missing."""
-    if _missing(size_cr) or _missing(price_band_high) or _missing(gmp_final):
-        return float("nan")
-    pct = gmp_pct(gmp_final, price_band_high)
-    ratio = gmp_ratio(gmp_final, gmp_open)
-    hair = size_haircut(size_cr)
-    if surge_rule and ratio >= 1.4:  # GMP still climbing during the issue: demand is real
-        hair = max(hair, 0.90)
-    return pct * hair * demand_factor(sub_retail) * trend_factor(ratio)
+    breakdown = listing_gain_breakdown(
+        size_cr,
+        price_band_high,
+        gmp_final,
+        gmp_open,
+        sub_retail,
+        surge_rule,
+    )
+    return breakdown["estimate_pct"] if breakdown is not None else float("nan")
 
 
 def short_verdict(gain: float) -> str:

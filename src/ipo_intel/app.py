@@ -135,18 +135,12 @@ with st.sidebar:
 
     with st.form("analysis_form"):
         name = st.text_input("IPO name", value="Jio Platforms")
-        screener_url = st.text_input(
-            "Screener company URL (optional)",
-            placeholder="https://www.screener.in/company/...",
-            help="Paste a direct company page URL. Automated Screener search is not supported.",
-        )
         live = st.checkbox(
             "Fetch live data",
             value=True,
             disabled=not scrapers_enabled(),
             help=(
-                "Fetch IPOWatch GMP and overview data, Chittorgarh issue, subscription and financials, "
-                "and fundamentals from the supplied Screener page."
+                "Fetch IPOWatch GMP and overview data, plus Chittorgarh issue, subscription and financials."
             ),
         )
         submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
@@ -183,7 +177,6 @@ if submitted:
         rep = pipeline.run(
             name.strip(),
             scrape=live and scrapers_enabled(),
-            screener_url=screener_url.strip() or None,
             overrides=overrides,
         )
 
@@ -245,8 +238,36 @@ if submitted:
 
             st.divider()
             raw_gmp, heuristic = st.columns(2)
-            raw_gmp.metric("GMP-implied return", f"{rep['gmp_pct']:+.1f}%")
-            heuristic.metric("Heuristic estimate", f"{rep['heuristic_gain']:+.1f}%")
+            raw_gmp.metric("Raw GMP-implied return", f"{rep['gmp_pct']:+.1f}%")
+            gmp_info = rep["gmp_explanation"]
+            raw_gmp.caption(
+                f"₹{gmp_info['gmp_rupees']:,.2f} unofficial grey-market premium ÷ "
+                f"₹{gmp_info['offer_price_rupees']:,.2f} offer price. This is a market-indicator "
+                "calculation, not a forecast."
+            )
+            heuristic.metric("Rule-based listing estimate", f"{rep['heuristic_gain']:+.1f}%")
+            factors = rep["heuristic_breakdown"]
+            retail_note = (
+                f"retail demand {factors['demand_factor']:.0%} "
+                f"(reported {observed['sub_retail']:.2f}×)"
+                if rep["subscription_known"]
+                else "retail demand 85% (assumed 1–3×; subscription unavailable)"
+            )
+            trend_note = (
+                f"GMP trend {factors['trend_factor']:.0%} "
+                f"(latest/open ratio {factors['gmp_ratio']:.2f}×)"
+                if observed.get("gmp_open") is not None and observed["gmp_open"] > 0
+                else "GMP trend neutral (opening GMP unavailable)"
+            )
+            surge_note = (
+                " A rising-GMP adjustment raised the issue-size factor."
+                if factors["surge_adjustment"]
+                else ""
+            )
+            heuristic.caption(
+                f"GMP-implied return × issue-size factor {factors['size_factor']:.0%} × "
+                f"{retail_note} × {trend_note} = estimate.{surge_note}"
+            )
 
         subscriptions = [
             ("sub_overall", "Overall"),

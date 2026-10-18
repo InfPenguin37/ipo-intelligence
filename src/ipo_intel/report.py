@@ -14,8 +14,31 @@ def to_text(rep: dict) -> str:
         L.append(f"  Cannot estimate yet. Missing: {', '.join(rep['missing_short_term'])}")
         L.append("  Provide them with --set key=value (e.g. --set gmp_final=221).")
     else:
-        L.append(f"  Raw GMP implies:        {rep['gmp_pct']:+.1f}%")
-        L.append(f"  Heuristic estimate:     {rep['heuristic_gain']:+.1f}%")
+        gmp = rep["gmp_explanation"]
+        L.append(
+            f"  GMP-implied return:     {rep['gmp_pct']:+.1f}% "
+            f"(₹{gmp['gmp_rupees']:,.2f} premium / ₹{gmp['offer_price_rupees']:,.2f} offer price; "
+            "unofficial indicator, not a forecast)"
+        )
+        factors = rep["heuristic_breakdown"]
+        L.append(f"  Rule-based heuristic:   {rep['heuristic_gain']:+.1f}%")
+        L.append(
+            "    Formula: GMP-implied return × "
+            f"issue-size factor {factors['size_factor']:.0%} × "
+            f"retail-demand factor {factors['demand_factor']:.0%} × "
+            f"GMP-trend factor {factors['trend_factor']:.0%}."
+        )
+        if not rep["heuristic_retail_assumed"]:
+            L.append(
+                f"    Retail factor uses reported subscription of "
+                f"{rep['heuristic_retail_used']:g}×."
+            )
+        else:
+            L.append("    Retail factor assumes 1.5× subscription because the live retail figure is unavailable.")
+        if factors["surge_adjustment"]:
+            L.append("    Rising-GMP adjustment increased the issue-size factor.")
+        if rep["heuristic_gmp_open"] is None:
+            L.append("    No opening GMP was available; the heuristic uses a neutral trend factor.")
         if rep.get("ml"):
             m = rep["ml"]
             L.append(f"  ML estimate ({m['tier']}):    {m['q50']:+.1f}%  (80% band {m['q10']:+.1f}% to {m['q90']:+.1f}%)")
