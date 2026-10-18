@@ -357,6 +357,13 @@ def test_web_app_defaults_to_live_fetch_without_deployment_secret(monkeypatch):
     assert at.checkbox[0].disabled is False
     assert at.selectbox[0].label == "IPO name"
     assert at.selectbox[0].options == [
-        "Jio Platforms · Opens 21 Oct 2026 · Closes 23 Oct 2026 · Lists 28 Oct 2026",
-        "Paras Healthcare · Opens 21 Oct 2026 · Closes 23 Oct 2026",
+        "Jio Platforms",
+        "Paras Healthcare",
+    ]
+    at.selectbox[0].select("Jio Platforms").run()
+    assert "IPO schedule" in [item.value for item in at.subheader]
+    assert [item.value for item in at.metric][-3:] == [
+        "21 Oct 2026",
+        "23 Oct 2026",
+        "28 Oct 2026",
     ]

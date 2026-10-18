@@ -81,25 +81,6 @@ def _active_ipo_schedules() -> tuple[tuple[str, str | None, str | None, str | No
     )
 
 
-def _ipo_option_label(name: str, schedule: tuple[str | None, str | None, str | None]) -> str:
-    labels = ("Opens", "Closes", "Lists")
-    dates = [
-        f"{label} {pd.Timestamp(value).strftime('%d %b %Y')}"
-        for label, value in zip(labels, schedule, strict=True)
-        if value
-    ]
-    return f"{name} · {' · '.join(dates)}" if dates else name
-
-
-def _format_ipo_option(
-    selected: str | None,
-    schedules: dict[str, tuple[str | None, str | None, str | None]],
-) -> str:
-    if selected is None:
-        return ""
-    return _ipo_option_label(selected, schedules[selected])
-
-
 st.markdown(
     """
     <style>
@@ -208,23 +189,36 @@ if suggestion_error:
 elif not live_fetch_enabled:
     st.info("IPO suggestions require live scraping, which is disabled; enter a name manually.")
 
+if ipo_schedules:
+    ipo_names = tuple(schedule[0] for schedule in ipo_schedules)
+    schedule_by_name = {
+        name: (opening, closing, listing)
+        for name, opening, closing, listing in ipo_schedules
+    }
+    name = st.selectbox(
+        "IPO name",
+        options=ipo_names,
+        index=None,
+        placeholder="Search active and upcoming mainboard IPOs",
+    )
+else:
+    ipo_names = ()
+    name = st.text_input("IPO name", placeholder="Enter an IPO name")
+
+if name and name in ipo_names:
+    opening_date, closing_date, listing_date = schedule_by_name[name]
+    st.subheader("IPO schedule")
+    date_columns = st.columns(3)
+    for column, label, value in zip(
+        date_columns,
+        ("Opens", "Closes", "Expected listing"),
+        (opening_date, closing_date, listing_date),
+        strict=True,
+    ):
+        formatted_date = pd.Timestamp(value).strftime("%d %b %Y") if value else "Not announced"
+        column.metric(label, formatted_date)
+
 with st.form("analysis_form"):
-    if ipo_schedules:
-        ipo_names = tuple(schedule[0] for schedule in ipo_schedules)
-        schedule_by_name = {
-            name: (opening, closing, listing)
-            for name, opening, closing, listing in ipo_schedules
-        }
-        name = st.selectbox(
-            "IPO name",
-            options=ipo_names,
-            index=None,
-            placeholder="Search active and upcoming mainboard IPOs",
-            format_func=lambda selected: _format_ipo_option(selected, schedule_by_name),
-        )
-    else:
-        ipo_names = ()
-        name = st.text_input("IPO name", placeholder="Enter an IPO name")
     live = st.checkbox(
         "Fetch live data",
         value=live_fetch_enabled,
