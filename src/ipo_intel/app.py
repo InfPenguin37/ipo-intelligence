@@ -144,7 +144,10 @@ with st.sidebar:
             "Fetch live data",
             value=True,
             disabled=not scrapers_enabled(),
-            help="Fetch live GMP and subscription data, plus fundamentals from the supplied Screener page.",
+            help=(
+                "Fetch IPOWatch GMP and overview data, Chittorgarh issue, subscription and financials, "
+                "and fundamentals from the supplied Screener page."
+            ),
         )
         submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
 
@@ -330,26 +333,46 @@ if submitted:
     st.markdown('<p class="section-note">A fundamentals-based view over a 1–3 year horizon.</p>', unsafe_allow_html=True)
     long_term = rep.get("long_term")
     if long_term:
-        score_col, verdict_col, metrics_col = st.columns([1, 1.7, 2])
-        score_col.metric("Fundamental Score", f"{long_term['score']:.0f} / 100")
+        score_col, verdict_col, coverage_col = st.columns([1, 1.7, 1])
+        score = long_term["score"]
+        score_col.metric("Fundamental Score", f"{score:.0f} / 100" if score is not None else "N/A")
         verdict_col.markdown("**Assessment**")
         verdict_col.write(long_term["verdict"])
-        metrics_col.markdown("**Valuation & growth**")
-        metrics_col.write(
-            f"Blended growth **{long_term['blended_growth_pct']}%** · "
-            f"PEG **{long_term['peg']}** · Peer discount **{long_term['peer_discount_pct']}%**"
-        )
+        coverage_col.metric("Fundamental coverage", f"{long_term['coverage_pct']}%")
+        if long_term["provisional"]:
+            st.warning(
+                "Provisional score only: the score is normalized over the categories with usable data. "
+                "It is not a complete investment verdict."
+            )
+        valuation = []
+        for label, key, suffix in (
+            ("Blended growth", "blended_growth_pct", "%"),
+            ("PEG", "peg", ""),
+            ("Discount to best peer", "peer_discount_pct", "%"),
+        ):
+            value = long_term[key]
+            if value is not None:
+                valuation.append(f"{label} **{value}{suffix}**")
+        if valuation:
+            st.markdown(" · ".join(valuation))
         parts = pd.DataFrame(
             [{"Factor": factor.title(), "Score": score} for factor, score in long_term["parts"].items()]
         )
-        st.dataframe(
-            parts,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "Score": st.column_config.ProgressColumn("Score / 10", min_value=0, max_value=10, format="%d"),
-            },
-        )
+        if not parts.empty:
+            st.dataframe(
+                parts,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Score": st.column_config.ProgressColumn("Score / 10", min_value=0, max_value=10, format="%d"),
+                },
+            )
+        for item in long_term["evidence"]:
+            st.write(f"- {item}")
+        for item in long_term["unusable_fields"]:
+            st.caption(item)
+        if long_term["missing_fields"]:
+            st.caption("Still needed: " + "; ".join(long_term["missing_field_descriptions"]))
     else:
         missing = ", ".join(rep.get("long_term_missing", []))
         st.info(f"Long-term score is not available yet. Missing fundamentals: {missing}")

@@ -78,6 +78,177 @@ def parse_details(tables: list[pd.DataFrame]) -> dict:
     return out
 
 
+def _dated_values(tables: list[pd.DataFrame], row_pattern: str) -> dict[date, float]:
+    values: dict[date, float] = {}
+    for table in tables:
+        if table.empty:
+            continue
+        for _, row in table.iterrows():
+            label = T.norm(row.iloc[0])
+            if not re.search(row_pattern, label, re.I):
+                continue
+            for column, raw in row.iloc[1:].items():
+                period = pd.to_datetime(str(column), errors="coerce", dayfirst=True)
+                value = T.to_num(raw)
+                if pd.notna(period) and value is not None:
+                    values[period.date().replace(day=1)] = value
+    return values
+
+
+def parse_financials(tables: list[pd.DataFrame]) -> dict:
+    """Extract reported financial trends without treating loss reductions as profit growth."""
+    income = _dated_values(tables, r"^(?:total income|revenue)$")
+    pat = _dated_values(tables, r"^(?:profit after tax|net profit|pat)$")
+    ebitda = _dated_values(tables, r"^ebitda$")
+    borrowings = _dated_values(tables, r"^total borrowing")
+    net_worth = _dated_values(tables, r"^net worth$")
+
+    annual_income = {period: value for period, value in income.items() if period.month == 3}
+    annual_pat = {period: value for period, value in pat.items() if period.month == 3}
+    annual_ebitda = {period: value for period, value in ebitda.items() if period.month == 3}
+    quarterly_pat = {period: value for period, value in pat.items() if period.month != 3}
+    out: dict = {}
+
+    def latest_pair(values: dict[date, float]) -> tuple[date, float, date, float] | None:
+        periods = sorted(values)
+        if len(periods) < 2:
+            return None
+        latest_period = periods[-1]
+        prior_period = date(latest_period.year - 1, latest_period.month, 1)
+        if prior_period not in values:
+            return None
+        return latest_period, values[latest_period], prior_period, values[prior_period]
+
+    income_pair = latest_pair(annual_income)
+    if income_pair:
+        _, latest, _, prior = income_pair
+        out["latest_total_income_cr"] = latest
+        out["prior_total_income_cr"] = prior
+        if prior > 0:
+            out["total_income_growth_pct"] = (latest / prior - 1) * 100
+
+    ebitda_pair = latest_pair(annual_ebitda)
+    if ebitda_pair:
+        _, latest, _, prior = ebitda_pair
+        out["latest_annual_ebitda_cr"] = latest
+        out["prior_annual_ebitda_cr"] = prior
+        if prior > 0:
+            out["ebitda_growth_pct"] = (latest / prior - 1) * 100
+
+    latest_annual_periods = sorted(annual_income)
+    if latest_annual_periods:
+        period = latest_annual_periods[-1]
+        total_income = annual_income[period]
+        ebitda_value = annual_ebitda.get(period)
+        if total_income > 0 and ebitda_value is not None:
+            out["ebitda_margin_pct"] = ebitda_value / total_income * 100
+
+    pat_pair = latest_pair(annual_pat)
+    if pat_pair:
+        _, latest, _, prior = pat_pair
+        out["latest_annual_pat_cr"] = latest
+        out["prior_annual_pat_cr"] = prior
+        if latest < 0 and prior < 0:
+            out["annual_pat_loss_change_pct"] = (1 - abs(latest) / abs(prior)) * 100
+        elif latest > 0 and prior > 0:
+            periods = sorted(annual_pat)
+            if len(periods) >= 4:
+                start_period = periods[-4]
+                consecutive = all(
+                    date(start_period.year + offset, start_period.month, 1) in annual_pat
+                    and annual_pat[date(start_period.year + offset, start_period.month, 1)] > 0
+                    for offset in range(4)
+                )
+                if consecutive:
+                    out["pat_cagr_pct"] = (
+                        (latest / annual_pat[start_period]) ** (1 / 3) - 1
+                    ) * 100
+
+    quarter_pair = latest_pair(quarterly_pat)
+    if quarter_pair:
+        _, latest, _, prior = quarter_pair
+        out["latest_quarter_pat_cr"] = latest
+        out["prior_quarter_pat_cr"] = prior
+        if latest > 0 and prior > 0:
+            out["latest_qtr_pat_growth_pct"] = (latest / prior - 1) * 100
+        elif latest < 0 and prior < 0:
+            out["quarterly_pat_loss_narrowing_pct"] = (1 - abs(latest) / abs(prior)) * 100
+
+    for name, values in (
+        ("latest_total_borrowings_cr", borrowings),
+        ("latest_net_worth_cr", net_worth),
+    ):
+        if values:
+            out[name] = values[max(values)]
+    return out
+
+
+def parse_issue_objects(tables: list[pd.DataFrame]) -> dict:
+    for table in tables:
+        if table.shape[1] < 3:
+            continue
+        columns = [T.norm(column) for column in table.columns]
+        purpose_headers = ("issue object", "objects of the issue")
+        if not any(any(header in column for header in purpose_headers) for column in columns):
+            continue
+        purpose_column = next(
+            (
+                column
+                for column in table.columns
+                if any(header in T.norm(column) for header in purpose_headers)
+            ),
+            None,
+        )
+        amount_column = next(
+            (column for column in table.columns if "amt" in T.norm(column) or "crore" in T.norm(column)),
+            None,
+        )
+        if purpose_column is None or amount_column is None:
+            continue
+        repayments = [
+            T.to_num(row[amount_column])
+            for _, row in table.iterrows()
+            if "repayment" in T.norm(row[purpose_column])
+        ]
+        amounts = [value for value in repayments if value is not None]
+        total = next(
+            (
+                T.to_num(row[amount_column])
+                for _, row in table.iterrows()
+                if T.norm(row[purpose_column]).startswith("total")
+            ),
+            None,
+        )
+        if amounts and total is not None:
+            return {
+                "chittorgarh_debt_repayment_cr": sum(amounts),
+                "chittorgarh_net_proceeds_cr": total,
+            }
+    return {}
+
+
+def parse_valuation(tables: list[pd.DataFrame]) -> dict:
+    for table in tables:
+        if table.shape[1] < 2:
+            continue
+        label_column = table.columns[0]
+        row = next(
+            (
+                row
+                for _, row in table.iterrows()
+                if re.fullmatch(r"p\s*/\s*e(?:\s*\([^)]*\))?(?:\s*ratio)?", T.norm(row[label_column]))
+            ),
+            None,
+        )
+        if row is None:
+            continue
+        values = [T.to_num(value) for value in row.iloc[1:]]
+        pe_values = [value for value in values if value is not None]
+        if pe_values:
+            return {"pe": pe_values[0]}
+    return {}
+
+
 def parse_subscription(tables: list[pd.DataFrame]) -> dict:
     """Category subscription (times). Uses the last numeric cell in each category row."""
     for df in tables:
@@ -195,6 +366,9 @@ class ChittorgarhFetcher(Fetcher):
         html = self._page(ipo_name)
         tables = T.read_tables(html)
         out = parse_details(tables)
+        out.update(parse_financials(tables))
+        out.update(parse_issue_objects(tables))
+        out.update(parse_valuation(tables))
         subscription_url = find_subscription_url(html, ipo_name)
         subscription_tables = T.read_tables(self.http.get(subscription_url)) if subscription_url else tables
         out.update(parse_subscription(subscription_tables))

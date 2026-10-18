@@ -11,12 +11,21 @@ from ipo_intel.fetchers.chittorgarh import (
     ChittorgarhFetcher,
     best_link,
     find_ipo_links,
+    parse_financials,
+    parse_issue_objects,
+    parse_valuation,
     parse_details,
     parse_perf_tracker,
     parse_perf_tracker_data,
     parse_subscription,
 )
-from ipo_intel.fetchers.gmp import find_gmp_history_url, parse_gmp, parse_gmp_history
+from ipo_intel.fetchers.gmp import (
+    find_gmp_history_url,
+    find_ipowatch_overview_url,
+    parse_gmp,
+    parse_gmp_history,
+    parse_ipowatch_overview,
+)
 from ipo_intel.fetchers.screener import ScreenerFetcher, parse_fundamentals
 from ipo_intel.history_import import (
     map_investorgain_csv,
@@ -74,6 +83,67 @@ def test_subscription_ignores_share_allocation_tables():
     <tr><td>Retail</td><td>33130716</td><td>500.27</td><td>9.98%</td></tr>
     </table>"""
     assert parse_subscription(T.read_tables(allocations)) == {}
+
+
+def test_chittorgarh_financial_trends_keep_losses_distinct_from_growth():
+    html = """<table>
+    <tr><th>Particulars</th><th>30 Jun 2025</th><th>31 Mar 2025</th><th>30 Jun 2026</th><th>31 Mar 2026</th></tr>
+    <tr><td>Total Income</td><td>—</td><td>11492.23</td><td>—</td><td>16100.63</td></tr>
+    <tr><td>Profit After Tax</td><td>-1368.47</td><td>-370.71</td><td>-732.98</td><td>-1606.17</td></tr>
+    <tr><td>EBITDA</td><td>—</td><td>322.59</td><td>—</td><td>421.34</td></tr>
+    <tr><td>Total Borrowings</td><td>1100</td><td>1000</td><td>1250</td><td>1200</td></tr>
+    <tr><td>Net Worth</td><td>1800</td><td>2000</td><td>2400</td><td>2500</td></tr>
+    </table>"""
+
+    result = parse_financials(T.read_tables(html))
+
+    assert result["total_income_growth_pct"] == pytest.approx((16100.63 / 11492.23 - 1) * 100)
+    assert result["ebitda_growth_pct"] == pytest.approx((421.34 / 322.59 - 1) * 100)
+    assert result["ebitda_margin_pct"] == pytest.approx(421.34 / 16100.63 * 100)
+    assert result["annual_pat_loss_change_pct"] == pytest.approx((1 - 1606.17 / 370.71) * 100)
+    assert result["quarterly_pat_loss_narrowing_pct"] == pytest.approx((1 - 732.98 / 1368.47) * 100)
+    assert "pat_cagr_pct" not in result
+    assert "latest_qtr_pat_growth_pct" not in result
+    assert result["latest_total_borrowings_cr"] == 1250
+    assert result["latest_net_worth_cr"] == 2400
+
+
+def test_chittorgarh_issue_objects_extract_repayment_total():
+    html = """<table>
+    <tr><th>Sr. No.</th><th>Objects of the Issue</th><th>Est Amt (₹ Cr.)</th></tr>
+    <tr><td>1</td><td>Repayment of certain borrowings</td><td>1,300</td></tr>
+    <tr><td>2</td><td>Repayment of certain borrowings</td><td>860</td></tr>
+    <tr><td></td><td>Total</td><td>2,160</td></tr>
+    </table>"""
+
+    assert parse_issue_objects(T.read_tables(html)) == {
+        "chittorgarh_debt_repayment_cr": 2160,
+        "chittorgarh_net_proceeds_cr": 2160,
+    }
+
+
+def test_chittorgarh_parses_loss_making_pe_as_negative():
+    table = """<table><tr><th>Valuation Metric</th><th>Pre IPO</th><th>Post IPO</th></tr>
+    <tr><td>EPS (₹)</td><td>-10.66</td><td>-ve</td></tr>
+    <tr><td>P/E (x)</td><td>-14.17</td><td>-ve</td></tr></table>"""
+    assert parse_valuation(T.read_tables(table)) == {"pe": -14.17}
+
+
+def test_ipowatch_overview_resolves_page_and_flags_peer_and_debt_data():
+    tracker = '<a href="/zetwerk-ipo/">Zetwerk Manufacturing IPO</a>'
+    assert find_ipowatch_overview_url(tracker, "Zetwerk") == "https://ipowatch.in/zetwerk-ipo/"
+
+    overview = """<h2>Objects of the Issue</h2>
+    <table><tr><td>Purpose</td><td>Crores</td></tr>
+    <tr><td>Repayment of borrowings</td><td>1250</td></tr>
+    <tr><td>Repayment of borrowings</td><td>550</td></tr></table>
+    <h2>Peer Group Comparison</h2><p>There are no listed companies.</p>
+    <h2>IPO Lead Managers</h2>"""
+    parsed = parse_ipowatch_overview(T.read_tables(overview), overview)
+    assert parsed == {
+        "ipowatch_debt_repayment_cr": 1800,
+        "ipowatch_no_listed_peers": 1.0,
+    }
 
 
 def test_screener_extracts_supported_fundamentals():

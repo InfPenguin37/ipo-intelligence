@@ -28,12 +28,17 @@ def to_text(rep: dict) -> str:
     L.append("\nLONG TERM (1-3 years)")
     lt = rep.get("long_term")
     if lt:
-        L.append(f"  Score {lt['score']:.0f}/100  ->  {lt['verdict']}")
+        score = f"{lt['score']:.0f}/100" if lt["score"] is not None else "N/A"
+        L.append(f"  Score {score}  ->  {lt['verdict']}")
+        L.append(f"  Fundamental coverage: {lt['coverage_pct']}%")
         for k, val in lt["parts"].items():
             L.append(f"    {k:<28} {val}/10")
-        L.append(
-            f"  (blended growth {lt['blended_growth_pct']}%, PEG {lt['peg']}, discount to best peer {lt['peer_discount_pct']}%)"
-        )
+        for item in lt["evidence"]:
+            L.append(f"  Evidence: {item}")
+        for item in lt["unusable_fields"]:
+            L.append(f"  Not usable: {item}")
+        if lt["missing_fields"]:
+            L.append(f"  Still needed: {'; '.join(lt['missing_field_descriptions'])}")
     else:
         L.append(f"  Not scored. Missing: {', '.join(rep.get('long_term_missing', []))}")
 

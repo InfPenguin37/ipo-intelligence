@@ -8,8 +8,8 @@ from . import config
 from .fetchers import ChittorgarhFetcher, FetchError, GmpFetcher, PoliteSession, ScreenerFetcher
 from .fetchers.tables import name_matches
 from .ml import load_models, predict_one
-from .schema import ALL_KEYS, FUNDAMENTAL_KEYS, Snapshot, coerce
-from .scoring import MissingFields, est_listing_gain, gmp_pct, long_term, scenarios, short_verdict
+from .schema import ALL_KEYS, FUNDAMENTAL_CONTEXT_KEYS, FUNDAMENTAL_KEYS, Snapshot, coerce
+from .scoring import est_listing_gain, gmp_pct, long_term, scenarios, short_verdict
 from .store import Store
 
 
@@ -100,7 +100,8 @@ def collect(
             snap.warnings.append("Live fetch requested but disabled by IPO_ENABLE_SCRAPERS=0; skipped.")
         else:
             http = PoliteSession()
-            for fetcher in (GmpFetcher(http), ChittorgarhFetcher(http)):
+            gmp_fetcher = GmpFetcher(http)
+            for fetcher in (gmp_fetcher, ChittorgarhFetcher(http)):
                 try:
                     data = fetcher.fetch(name)
                 except FetchError as e:
@@ -121,6 +122,11 @@ def collect(
                             )
                     except FetchError as e:
                         snap.warnings.append(f"{fetcher.name} history: {e}")
+                    try:
+                        for key, value in fetcher.fetch_overview(name).items():
+                            snap.set(key, value, "ipowatch-ipo-overview")
+                    except FetchError as e:
+                        snap.warnings.append(f"ipowatch-ipo-overview: {e}")
             if screener_url:
                 try:
                     data = ScreenerFetcher(http).fetch(name, screener_url)
@@ -129,6 +135,25 @@ def collect(
                 else:
                     for key, value in data.items():
                         snap.set(key, value, ScreenerFetcher.name)
+
+            chitt_repayment = snap.get("chittorgarh_debt_repayment_cr")
+            ipowatch_repayment = snap.get("ipowatch_debt_repayment_cr")
+            if chitt_repayment is not None and ipowatch_repayment is not None:
+                if abs(chitt_repayment - ipowatch_repayment) <= 1:
+                    net_proceeds = snap.get("chittorgarh_net_proceeds_cr")
+                    if net_proceeds and net_proceeds > 0:
+                        snap.set(
+                            "proceeds_to_debt_repay_pct",
+                            chitt_repayment / net_proceeds * 100,
+                            "Chittorgarh and IPOWatch",
+                        )
+                else:
+                    snap.warnings.append(
+                        "Debt-repayment proceeds differ across sources: "
+                        f"Chittorgarh reports ₹{chitt_repayment:,.0f} Cr; "
+                        f"IPOWatch reports ₹{ipowatch_repayment:,.0f} Cr. "
+                        "The score excludes this field until the prospectus is checked."
+                    )
 
     observations = store.gmp_observations(name)
     if len(observations) >= 2:
@@ -191,12 +216,11 @@ def analyse(snap: Snapshot, models="auto") -> dict:
                 "issue price within weeks of listing. Decide your exit before you apply."
             )
 
-    fundamentals = {k: v.get(k) for k in FUNDAMENTAL_KEYS}
-    try:
-        rep["long_term"] = long_term(fundamentals)
-    except MissingFields as e:
-        rep["long_term"] = None
-        rep["long_term_missing"] = e.missing
+    fundamentals = {
+        k: v.get(k)
+        for k in FUNDAMENTAL_KEYS + FUNDAMENTAL_CONTEXT_KEYS
+    }
+    rep["long_term"] = long_term(fundamentals)
     return rep
 
 

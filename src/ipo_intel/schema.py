@@ -37,6 +37,26 @@ FUNDAMENTAL_KEYS = [
     "market_rank",
     "tariff_hike_dependent",
 ]
+FUNDAMENTAL_CONTEXT_KEYS = [
+    "total_income_growth_pct",
+    "ebitda_growth_pct",
+    "annual_pat_loss_change_pct",
+    "quarterly_pat_loss_narrowing_pct",
+    "latest_total_income_cr",
+    "prior_total_income_cr",
+    "latest_annual_ebitda_cr",
+    "prior_annual_ebitda_cr",
+    "latest_annual_pat_cr",
+    "prior_annual_pat_cr",
+    "latest_quarter_pat_cr",
+    "prior_quarter_pat_cr",
+    "latest_total_borrowings_cr",
+    "latest_net_worth_cr",
+    "chittorgarh_debt_repayment_cr",
+    "chittorgarh_net_proceeds_cr",
+    "ipowatch_debt_repayment_cr",
+    "ipowatch_no_listed_peers",
+]
 ALL_KEYS = MARKET_KEYS + FUNDAMENTAL_KEYS
 REQUIRED_FOR_SHORT_TERM = ["issue_size_cr", "price_band_high", "gmp_final"]
 
@@ -89,7 +109,7 @@ class Snapshot:
         return [k for k in REQUIRED_FOR_SHORT_TERM if k not in self.data]
 
     def provenance(self) -> list[dict[str, Any]]:
-        order = {k: i for i, k in enumerate(ALL_KEYS)}
+        order = {k: i for i, k in enumerate(ALL_KEYS + FUNDAMENTAL_CONTEXT_KEYS)}
         rows = [
             {"field": k, "value": d.value, "source": d.source, "fetched_at": d.fetched_at}
             for k, d in self.data.items()

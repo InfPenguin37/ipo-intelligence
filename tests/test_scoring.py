@@ -4,7 +4,7 @@ import pytest
 
 from ipo_intel import config
 from ipo_intel.pipeline import flatten_case
-from ipo_intel.scoring import MissingFields, est_listing_gain, long_term, short_verdict
+from ipo_intel.scoring import est_listing_gain, long_term, short_verdict
 from ipo_intel.scoring import backtest
 
 
@@ -42,7 +42,27 @@ def test_long_term_score_for_jio_seed():
     assert res["parts"]["concentration / regulatory"] == 3
 
 
-def test_long_term_reports_missing_fields():
-    with pytest.raises(MissingFields) as e:
-        long_term({"pe": 30})
-    assert "roce_pct" in e.value.missing
+def test_long_term_reports_partial_score_and_missing_fields():
+    result = long_term({"ebitda_margin_pct": 2.62, "roce_pct": 4.0})
+
+    assert result["score"] == 26.0
+    assert result["coverage_pct"] == 25
+    assert result["provisional"] is True
+    assert result["verdict"].startswith("PROVISIONAL")
+    assert set(result["parts"]) == {"profitability", "returns (ROCE)"}
+    assert "pat_cagr_pct" in result["missing_fields"]
+
+
+def test_long_term_marks_loss_making_valuation_unusable():
+    result = long_term(
+        {
+            "pe": -14.17,
+            "ebitda_margin_pct": 2.62,
+            "ipowatch_no_listed_peers": 1.0,
+        }
+    )
+
+    assert result["score"] == 30.0
+    assert result["coverage_pct"] == 15
+    assert any("not meaningful" in note for note in result["unusable_fields"])
+    assert any("no listed peer" in note for note in result["unusable_fields"])

@@ -56,6 +56,13 @@ provided company page: the latest annual operating margin and ROCE, three-year P
 profits are positive, and latest-quarter PAT growth when both comparable quarters are profitable. Other or
 non-meaningful values (such as growth rates spanning losses) are omitted.
 
+The Chittorgarh IPO page also supplies annual income, EBITDA and PAT trends, comparable-quarter PAT trends,
+borrowings/net-worth context and repayment objects. IPOWatch's linked IPO overview supplies its debt-repayment
+claim and listed-peer availability. Conflicting repayment amounts are shown as a warning and excluded from the
+score pending verification against the prospectus. Long-term analysis shows a normalized provisional score and
+coverage when only some weighted categories have usable data; incomplete coverage never produces a categorical
+buy/avoid verdict. Reported trends are evidence, not substitutes for missing scorer inputs.
+
 * The fetchers read public web pages. They honour `robots.txt`, wait between requests and cache raw responses
   in `data/raw/`. Check each site's terms of use before relying on them. Don't lower `IPO_REQUEST_DELAY_S`.
 * `ipo collect-history` reads Chittorgarh's JSON performance-tracker endpoint. The `ipo probe` command inspects

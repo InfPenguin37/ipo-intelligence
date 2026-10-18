@@ -6,6 +6,7 @@ from streamlit.testing.v1 import AppTest
 from conftest import make_history
 from ipo_intel import cli, config, pipeline
 from ipo_intel.fetchers import ChittorgarhFetcher, GmpFetcher, ScreenerFetcher
+from ipo_intel.report import to_text
 from ipo_intel.store import Store
 
 APP = str(Path(__file__).resolve().parents[1] / "src" / "ipo_intel" / "app.py")
@@ -102,10 +103,52 @@ def test_screener_url_adds_fundamentals_with_source(monkeypatch, tmp_path):
     assert next(row for row in snapshot.provenance() if row["field"] == "roce_pct")["source"] == "screener.in"
 
 
+def test_debt_repayment_conflict_is_warned_and_excluded(monkeypatch, tmp_path):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "1")
+    monkeypatch.setattr(GmpFetcher, "fetch", lambda self, name: {})
+    monkeypatch.setattr(GmpFetcher, "fetch_history", lambda self, name: [])
+    monkeypatch.setattr(
+        GmpFetcher,
+        "fetch_overview",
+        lambda self, name: {"ipowatch_debt_repayment_cr": 1800.0, "ipowatch_no_listed_peers": 1.0},
+    )
+    monkeypatch.setattr(
+        ChittorgarhFetcher,
+        "fetch",
+        lambda self, name: {
+            "chittorgarh_debt_repayment_cr": 2160.0,
+            "chittorgarh_net_proceeds_cr": 2160.0,
+            "ebitda_margin_pct": 2.62,
+        },
+    )
+
+    snapshot = pipeline.collect(
+        "Zetwerk",
+        scrape=True,
+        store=Store(tmp_path / "debt-conflict.db"),
+    )
+
+    assert snapshot.get("proceeds_to_debt_repay_pct") is None
+    assert any("Chittorgarh reports ₹2,160 Cr" in warning for warning in snapshot.warnings)
+
+
 def test_unknown_ipo_reports_what_is_missing():
     rep = pipeline.run("Totally Unknown Ltd")
     assert set(rep["missing_short_term"]) == {"issue_size_cr", "price_band_high", "gmp_final"}
-    assert rep["long_term"] is None
+    assert rep["long_term"]["score"] is None
+    assert rep["long_term"]["coverage_pct"] == 0
+
+
+def test_report_discloses_provisional_long_term_coverage_and_missing_fields(tmp_path):
+    snapshot = pipeline.collect(
+        "Unknown Company",
+        store=Store(tmp_path / "unknown-report.db"),
+    )
+    text = to_text(pipeline.analyse(snapshot, models=None))
+
+    assert "Score N/A" in text
+    assert "Fundamental coverage: 0%" in text
+    assert "PAT CAGR across positive annual profits" in text
 
 
 def test_scrape_flag_is_refused_when_not_enabled(monkeypatch):
