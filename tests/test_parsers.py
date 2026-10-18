@@ -15,7 +15,11 @@ from ipo_intel.fetchers.chittorgarh import (
     parse_subscription,
 )
 from ipo_intel.fetchers.gmp import parse_gmp
-from ipo_intel.history_import import map_kaggle_workbook, merge_kaggle_history
+from ipo_intel.history_import import (
+    map_investorgain_csv,
+    map_kaggle_workbook,
+    merge_kaggle_history,
+)
 from ipo_intel.store import HISTORY_COLUMNS
 
 DETAILS = """<table>
@@ -260,6 +264,47 @@ def test_kaggle_history_merge_matches_rows_and_preserves_gmp():
 
     repeat = merge_kaggle_history(incoming, merged.rows)
     assert (repeat.added, repeat.updated, repeat.skipped) == (0, 3, 1)
+
+
+def test_investorgain_csv_maps_gmp_and_listing_outcome():
+    tracker = pd.DataFrame(
+        [
+            {
+                "Year": 2025,
+                "IPO▲▼": "Example IPO",
+                "Symbol▲▼": "EXAMPLE",
+                "Listing Dt▲▼": "14-Oct-19",
+                "Size▲▼": "₹1,234.56 Cr",
+                "Sub▲▼": "111.91x",
+                "GMP▲▼": "₹215",
+                "Price▲▼": "₹320.00",
+                "Est Price▲▼": "₹535.00",
+                "Listing Price▲▼": "₹626.00 (95.62%)",
+                "Listing Day Close▲▼": "₹728.60 (127.69%)",
+                "Closing Price (LTP)▲▼": "₹466.65 (629.14%)",
+            },
+            {
+                "Year": 2025,
+                "IPO▲▼": "Zero GMP IPO",
+                "Listing Dt▲▼": "4-Dec-19",
+                "Size▲▼": "₹409.68 Cr",
+                "Sub▲▼": "86.91x",
+                "GMP▲▼": "₹0",
+                "Price▲▼": "₹195.00",
+                "Listing Price▲▼": "₹275.00 (41.03%)",
+            },
+        ]
+    )
+
+    mapped = map_investorgain_csv(tracker, "investorgain:test.csv")
+
+    assert mapped.loc[0, "listing_date"] == "2019-10-14"
+    assert mapped.loc[0, "issue_size_cr"] == 1234.56
+    assert mapped.loc[0, "price_band_high"] == 320
+    assert mapped.loc[0, "sub_overall"] == 111.91
+    assert mapped.loc[0, "gmp_final"] == 215
+    assert mapped.loc[0, "listing_gain_pct"] == 95.62
+    assert mapped.loc[1, "gmp_final"] == 0
 
 
 def test_link_discovery():

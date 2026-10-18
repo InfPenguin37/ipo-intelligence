@@ -13,7 +13,7 @@ import pandas as pd
 from . import config, pipeline, report
 from .fetchers import ChittorgarhFetcher, FetchError, PoliteSession
 from .fetchers.tables import read_tables
-from .history_import import prepare_kaggle_import
+from .history_import import prepare_investorgain_import, prepare_kaggle_import
 from .ml import train_all
 from .scoring import backtest
 from .store import HISTORY_COLUMNS, Store
@@ -71,6 +71,17 @@ def _cmd_import_csv(a) -> int:
 def _cmd_import_excel(a) -> int:
     store = Store()
     imported = prepare_kaggle_import(a.path, store.load_history())
+    store.upsert_history(imported.rows)
+    print(
+        f"Added {imported.added} IPOs, updated {imported.updated} matches, "
+        f"skipped {imported.skipped} incomplete rows."
+    )
+    return 0
+
+
+def _cmd_import_gmp_csv(a) -> int:
+    store = Store()
+    imported = prepare_investorgain_import(a.path, store.load_history())
     store.upsert_history(imported.rows)
     print(
         f"Added {imported.added} IPOs, updated {imported.updated} matches, "
@@ -144,6 +155,10 @@ def main(argv=None) -> int:
     x = sub.add_parser("import-excel", help="merge the Kaggle IPO history workbook")
     x.add_argument("path")
     x.set_defaults(fn=_cmd_import_excel)
+
+    g = sub.add_parser("import-gmp-csv", help="merge an InvestorGain GMP tracker CSV")
+    g.add_argument("path")
+    g.set_defaults(fn=_cmd_import_gmp_csv)
 
     sub.add_parser("train", help="train ML models and print walk-forward results").set_defaults(fn=_cmd_train)
     sub.add_parser("backtest", help="rule-based estimator on the seed cases").set_defaults(fn=_cmd_backtest)

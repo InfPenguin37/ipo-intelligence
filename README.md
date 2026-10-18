@@ -65,6 +65,7 @@ ipo collect-history --from-year 2015  # only 2015 through the current year
 ipo collect-history --limit 20        # optional cap for a small test run
 ipo import-csv my_history.csv  # or load your own CSV (needs name, listing_gain_pct; see store.HISTORY_COLUMNS)
 ipo import-excel "data/Initial Public Offering (Updated).xlsx"  # merge the Kaggle IPO workbook
+ipo import-gmp-csv data/investorgain_mainboard_ipo_gmp_2018_2026.csv  # merge GMP and tracker outcomes
 ipo train                      # trains both tiers, prints walk-forward / leave-one-out results
 ```
 
@@ -75,6 +76,9 @@ or issue price/size, fills missing fields without replacing existing values, and
 If you have GMP data, add `GMP Open`, `GMP Peak`, and `GMP Final` columns to the workbook; a single `GMP`
 column is treated as the final GMP. It skips incomplete/unlisted rows and keeps repeated issuer names on distinct
 IPO dates as separate records.
+The InvestorGain CSV importer maps the tracker’s `GMP` column to `gmp_final`, reads listing gain from the
+listing-price percentage, and merges by listing date plus IPO name or matching issue price and size. It fills
+missing values without replacing populated history.
 
 Historical **GMP** is the hard part: public pages rarely keep it. Rows without GMP still train (missing values are
 handled), but the GMP-to-listing-gain relationship is learned only from rows that have it. Supplying a CSV with

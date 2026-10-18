@@ -92,6 +92,55 @@ def map_kaggle_workbook(workbook: pd.DataFrame, source: str) -> pd.DataFrame:
     return mapped.reindex(columns=HISTORY_COLUMNS)
 
 
+def _first_number(value: object) -> float | None:
+    match = re.search(r"[-+]?\d[\d,]*(?:\.\d+)?", str(value))
+    if match is None:
+        return None
+    return float(match.group().replace(",", ""))
+
+
+def _percent_in_parens(value: object) -> float | None:
+    match = re.search(r"\(([-+]?\d+(?:\.\d+)?)%\)", str(value))
+    return float(match.group(1)) if match else None
+
+
+def map_investorgain_csv(csv: pd.DataFrame, source: str) -> pd.DataFrame:
+    """Map InvestorGain's exported tracker columns to the training-history schema."""
+    columns = {_column_key(column): column for column in csv.columns}
+    required_headers = {
+        "name": "ipo",
+        "listing_date": "listingdt",
+        "issue_size_cr": "size",
+        "price_band_high": "price",
+        "listing_gain_pct": "listingprice",
+        "gmp_final": "gmp",
+    }
+    missing = [header for header in required_headers.values() if header not in columns]
+    if missing:
+        raise ValueError(
+            "InvestorGain CSV is missing required columns: "
+            + ", ".join(missing)
+        )
+
+    mapped = pd.DataFrame(
+        {
+            "name": csv[columns["ipo"]].astype("string").str.strip(),
+            "listing_date": pd.to_datetime(
+                csv[columns["listingdt"]], format="%d-%b-%y", errors="coerce"
+            ).dt.strftime("%Y-%m-%d"),
+            "issue_size_cr": csv[columns["size"]].map(_first_number),
+            "price_band_high": csv[columns["price"]].map(_first_number),
+            "sub_overall": csv[columns["sub"]].map(_first_number)
+            if "sub" in columns
+            else None,
+            "gmp_final": csv[columns["gmp"]].map(_first_number),
+            "listing_gain_pct": csv[columns["listingprice"]].map(_percent_in_parens),
+            "source": source,
+        }
+    )
+    return mapped.reindex(columns=HISTORY_COLUMNS)
+
+
 def _same_issue(candidate: dict, row: dict) -> bool:
     candidate_price = candidate.get("price_band_high")
     row_price = row.get("price_band_high")
@@ -182,4 +231,11 @@ def prepare_kaggle_import(path: Path | str, existing: pd.DataFrame) -> HistoryIm
     path = Path(path)
     workbook = pd.read_excel(path)
     incoming = map_kaggle_workbook(workbook, f"kaggle:{path.name}")
+    return merge_kaggle_history(incoming, existing)
+
+
+def prepare_investorgain_import(path: Path | str, existing: pd.DataFrame) -> HistoryImport:
+    path = Path(path)
+    csv = pd.read_csv(path)
+    incoming = map_investorgain_csv(csv, f"investorgain:{path.name}")
     return merge_kaggle_history(incoming, existing)
