@@ -24,6 +24,21 @@ def find_gmp_history_url(html: str, ipo_name: str) -> str | None:
     return None
 
 
+def _candidate_gmp_history_url(ipo_name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", ipo_name.lower()).strip("-")
+    return urljoin(config.URLS["gmp"], f"/{slug}-ipo-gmp-grey-market-premium/")
+
+
+def _gmp_page_matches(html: str, ipo_name: str) -> bool:
+    soup = BeautifulSoup(html, "html.parser")
+    details = [
+        soup.title.get_text(" ", strip=True) if soup.title else "",
+        *(meta.get("content", "") for meta in soup.find_all("meta", attrs={"name": "description"})),
+        *(heading.get_text(" ", strip=True) for heading in soup.find_all(["h1", "h2"])),
+    ]
+    return any(T.name_matches(ipo_name, detail) for detail in details)
+
+
 def find_ipowatch_overview_url(html: str, ipo_name: str) -> str | None:
     for link in BeautifulSoup(html, "html.parser").find_all("a", href=True):
         href = link["href"]
@@ -96,8 +111,11 @@ def parse_ipowatch_overview(tables: list[pd.DataFrame], html: str) -> dict:
     return out
 
 
-def parse_gmp_history(tables: list[pd.DataFrame]) -> list[tuple[str, float]]:
-    """Parse IPOWatch's day-wise GMP rows, inferring year from the IPO open-date details."""
+def parse_gmp_history(
+    tables: list[pd.DataFrame],
+    reference_year: int | None = None,
+) -> list[tuple[str, float]]:
+    """Parse day-wise GMP rows, using the IPO open date or page publication year."""
     issue_year = None
     for table in tables:
         if table.shape[1] < 2:
@@ -112,13 +130,19 @@ def parse_gmp_history(tables: list[pd.DataFrame]) -> list[tuple[str, float]]:
             break
 
     if issue_year is None:
+        issue_year = reference_year
+    if issue_year is None:
         return []
 
     observations: dict[str, float] = {}
     for table in tables:
         if table.shape[1] < 2:
             continue
-        header = [T.norm(value) for value in table.iloc[0].tolist()]
+        header = [T.norm(value) for value in table.columns]
+        data = table
+        if not {"date", "ipo gmp"} <= set(header):
+            header = [T.norm(value) for value in table.iloc[0].tolist()]
+            data = table.iloc[1:]
         try:
             date_column = header.index("date")
             gmp_column = header.index("ipo gmp")
@@ -129,7 +153,7 @@ def parse_gmp_history(tables: list[pd.DataFrame]) -> list[tuple[str, float]]:
             None,
         )
 
-        for _, row in table.iloc[1:].iterrows():
+        for _, row in data.iterrows():
             date_text = str(row.iloc[date_column]).strip()
             gmp = T.to_num(row.iloc[gmp_column])
             if not date_text or date_text.lower() == "nan" or gmp is None:
@@ -155,6 +179,16 @@ def parse_gmp_history(tables: list[pd.DataFrame]) -> list[tuple[str, float]]:
             observations[observed_at.isoformat(timespec="seconds")] = gmp
 
     return sorted(observations.items())
+
+
+def _parse_gmp_page_history(html: str) -> list[tuple[str, float]]:
+    reference_year = None
+    for property_name in ("dateModified", "datePublished"):
+        match = re.search(rf'"{property_name}"\s*:\s*"(\d{{4}})-', html)
+        if match:
+            reference_year = int(match.group(1))
+            break
+    return parse_gmp_history(T.read_tables(html), reference_year)
 
 
 def parse_gmp(tables: list[pd.DataFrame], ipo_name: str) -> dict:
@@ -193,14 +227,31 @@ class GmpFetcher(Fetcher):
         self.history_url = find_gmp_history_url(html, ipo_name)
         self.overview_url = find_ipowatch_overview_url(html, ipo_name)
         found = parse_gmp(T.read_tables(html), ipo_name)
-        if not found:
-            raise FetchError(f"'{ipo_name}' not found in GMP table at {config.URLS['gmp']}")
+        if found:
+            return found
+
+        self.history_url = self.history_url or _candidate_gmp_history_url(ipo_name)
+        detail_html = self.http.get(self.history_url)
+        if not _gmp_page_matches(detail_html, ipo_name):
+            raise FetchError(
+                f"'{ipo_name}' not found in the GMP table or matching IPOWatch detail page "
+                f"at {config.URLS['gmp']}"
+            )
+        observations = _parse_gmp_page_history(detail_html)
+        if not observations:
+            raise FetchError(
+                f"no dated GMP observations found on IPOWatch detail page {self.history_url}"
+            )
+        found = {
+            "gmp_current": observations[-1][1],
+            "gmp_current_observed_at": observations[-1][0],
+        }
         return found
 
     def fetch_history(self, ipo_name: str) -> list[tuple[str, float]]:
         if self.history_url is None:
             raise FetchError(f"no IPOWatch GMP history page found for '{ipo_name}'")
-        observations = parse_gmp_history(T.read_tables(self.http.get(self.history_url)))
+        observations = _parse_gmp_page_history(self.http.get(self.history_url))
         if not observations:
             raise FetchError(f"no dated GMP observations found at {self.history_url}")
         return observations

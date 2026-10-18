@@ -20,6 +20,7 @@ from ipo_intel.fetchers.chittorgarh import (
     parse_subscription,
 )
 from ipo_intel.fetchers.gmp import (
+    GmpFetcher,
     find_gmp_history_url,
     find_ipowatch_overview_url,
     parse_gmp,
@@ -267,6 +268,51 @@ def test_find_gmp_history_page_and_parse_daywise_history():
         ("2026-10-16T11:44:00+00:00", 11.0),
         ("2026-10-17T11:30:00+00:00", 5.0),
     ]
+
+
+def test_gmp_fetch_falls_back_to_ipo_specific_history_page():
+    detail_page = """<html>
+    <head>
+      <title>Sahajanand Medical IPO GMP Today</title>
+      <meta name="description" content="Sahajanand Medical Technologies IPO GMP today">
+      <script type="application/ld+json">
+        {"datePublished":"2025-10-17T12:12:45+00:00","dateModified":"2026-10-17T12:12:49+00:00"}
+      </script>
+    </head>
+    <body><table>
+      <thead><tr><th>Date</th><th>IPO GMP</th><th>GMP Trend</th><th>Gain</th><th>Last Updated</th></tr></thead>
+      <tbody>
+        <tr><td>17 October</td><td>₹15</td><td>down</td><td>4.36%</td><td>17:00</td></tr>
+        <tr><td>16 October</td><td>₹40</td><td>down</td><td>11.63%</td><td>17:14</td></tr>
+      </tbody>
+    </table></body></html>"""
+
+    class FakeHttp:
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url):
+            self.urls.append(url)
+            if url.endswith("/ipo-grey-market-premium-latest-ipo-gmp/"):
+                return "<html><body>No current GMP rows for this IPO.</body></html>"
+            if url.endswith("/sahajanand-medical-technologies-ipo-gmp-grey-market-premium/"):
+                return detail_page
+            raise AssertionError(f"unexpected URL: {url}")
+
+    http = FakeHttp()
+    fetcher = GmpFetcher(http)
+
+    assert fetcher.fetch("Sahajanand Medical Technologies") == {
+        "gmp_current": 15.0,
+        "gmp_current_observed_at": "2026-10-17T11:30:00+00:00",
+    }
+    assert fetcher.fetch_history("Sahajanand Medical Technologies") == [
+        ("2026-10-16T11:44:00+00:00", 40.0),
+        ("2026-10-17T11:30:00+00:00", 15.0),
+    ]
+    assert http.urls[1] == (
+        "https://ipowatch.in/sahajanand-medical-technologies-ipo-gmp-grey-market-premium/"
+    )
 
 
 def test_perf_tracker():

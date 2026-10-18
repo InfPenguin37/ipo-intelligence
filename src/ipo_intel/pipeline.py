@@ -133,7 +133,13 @@ def collect(
                     continue
                 if "gmp_current" in data:
                     current_gmp = data.pop("gmp_current")
-                    observed_at = store.record_gmp(name, current_gmp, fetcher.name)
+                    source_timestamp = data.pop("gmp_current_observed_at", None)
+                    observed_at = store.record_gmp(
+                        name,
+                        current_gmp,
+                        fetcher.name,
+                        ts=source_timestamp,
+                    )
                     snap.set("gmp_latest", current_gmp, fetcher.name)
                     snap.set("gmp_latest_observed_at", observed_at, fetcher.name)
                 for k, v in data.items():

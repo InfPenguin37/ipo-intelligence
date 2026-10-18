@@ -108,6 +108,29 @@ def test_ipowatch_history_feeds_gmp_stats_and_keeps_source(monkeypatch, tmp_path
     assert len(store.gmp_observations("Zetwerk")) == 3
 
 
+def test_live_gmp_uses_source_observation_timestamp(monkeypatch, tmp_path):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "1")
+    monkeypatch.setattr(
+        GmpFetcher,
+        "fetch",
+        lambda self, name: {
+            "gmp_current": 15.0,
+            "gmp_current_observed_at": "2026-10-17T11:30:00+00:00",
+        },
+    )
+    monkeypatch.setattr(GmpFetcher, "fetch_history", lambda self, name: [])
+    monkeypatch.setattr(ChittorgarhFetcher, "fetch", lambda self, name: {})
+    store = Store(tmp_path / "source-gmp-timestamp.db")
+
+    snapshot = pipeline.collect("Sahajanand Medical Technologies", scrape=True, store=store)
+
+    assert snapshot.get("gmp_latest") == 15.0
+    assert snapshot.get("gmp_latest_observed_at") == "2026-10-17T11:30:00+00:00"
+    assert store.gmp_observations("Sahajanand Medical Technologies") == [
+        ("2026-10-17T11:30:00+00:00", 15.0, "gmp-table")
+    ]
+
+
 def test_screener_url_adds_fundamentals_with_source(monkeypatch, tmp_path):
     monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "1")
     url = "https://www.screener.in/company/id/1286259/consolidated/"
