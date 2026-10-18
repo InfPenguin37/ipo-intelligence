@@ -101,7 +101,13 @@ def test_cli_import_and_train(tmp_path, capsys):
 def test_web_app_runs_end_to_end():
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
+    at.text_area[0].input("sub_retail=2.4").run()
     at.button[0].click().run()
     assert not at.exception
     assert "Short term" in [s.value for s in at.subheader]
     assert any("Score" in m.label for m in at.metric)
+    assert "#### Reported subscription" in [s.value for s in at.markdown]
+    assert any(
+        "Source" in str(dataframe.proto) and "Snapshot time (UTC)" in str(dataframe.proto)
+        for dataframe in at.dataframe
+    )

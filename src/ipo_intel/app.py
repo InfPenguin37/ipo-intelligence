@@ -9,9 +9,38 @@ import streamlit as st
 from ipo_intel import pipeline
 from ipo_intel.config import scrapers_enabled
 from ipo_intel.report import DISCLAIMER
-from ipo_intel.schema import ALL_KEYS
+from ipo_intel.schema import ALL_KEYS, MARKET_KEYS
 
 st.set_page_config(page_title="IPO Intelligence", page_icon="📈", layout="wide")
+
+_MARKET_LABELS = {
+    "issue_size_cr": "Issue size",
+    "price_band_high": "Upper price band",
+    "structure": "Issue structure",
+    "ofs_share": "Offer-for-sale share",
+    "gmp_open": "Opening GMP",
+    "gmp_peak": "Peak GMP",
+    "gmp_final": "Latest GMP",
+    "sub_overall": "Overall subscription",
+    "sub_qib": "QIB subscription",
+    "sub_nii": "NII subscription",
+    "sub_retail": "Retail subscription",
+    "listing_date": "Listing date",
+}
+
+
+def _format_market_value(field: str, value: object) -> str:
+    if isinstance(value, (int, float)):
+        if field == "issue_size_cr":
+            return f"₹{value:,.2f} Cr"
+        if field == "ofs_share":
+            return f"{value * 100:.1f}%"
+        if field.startswith("sub_"):
+            return f"{value:g}×"
+        if field in {"price_band_high", "gmp_open", "gmp_peak", "gmp_final"}:
+            return f"₹{value:,.2f}"
+    return str(value)
+
 
 st.markdown(
     """
@@ -175,12 +204,35 @@ if submitted:
             ("sub_nii", "NII"),
             ("sub_retail", "Retail"),
         ]
-        available_subscriptions = [(field, label, observed[field]) for field, label in subscriptions if observed.get(field) is not None]
+        available_subscriptions = [
+            (field, label, observed[field])
+            for field, label in subscriptions
+            if observed.get(field) is not None
+        ]
         if available_subscriptions:
-            st.markdown("#### Subscription")
+            st.markdown("#### Reported subscription")
+            st.caption(
+                "Latest available demand snapshot, not a projection. Subscription can change until bidding closes."
+            )
             subscription_cols = st.columns(len(available_subscriptions))
             for column, (_, label, value) in zip(subscription_cols, available_subscriptions):
                 column.metric(label, f"{value:g}×")
+
+        market_rows = [
+            {
+                "Data point": _MARKET_LABELS[row["field"]],
+                "Value": _format_market_value(row["field"], row["value"]),
+                "Source": row["source"],
+                "Snapshot time (UTC)": pd.to_datetime(row["fetched_at"], utc=True).strftime(
+                    "%d %b %Y, %H:%M"
+                ),
+            }
+            for row in rep["provenance"]
+            if row["field"] in MARKET_KEYS
+        ]
+        if market_rows:
+            st.markdown("#### Current market data used")
+            st.dataframe(pd.DataFrame(market_rows), hide_index=True, use_container_width=True)
 
         if rep.get("scenarios"):
             st.markdown("#### Listing scenarios")
