@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import re
 
+import pandas as pd
+
 from . import config
 from .fetchers import ChittorgarhFetcher, FetchError, GmpFetcher, PoliteSession, ScreenerFetcher
 from .fetchers.tables import name_matches
@@ -47,19 +49,35 @@ _SUB_MAP = {"overall": "sub_overall", "qib": "sub_qib", "nii": "sub_nii", "retai
 
 
 def flatten_case(case: dict) -> dict:
-    out: dict = {"issue_size_cr": case.get("issue_size_cr"), "price_band_high": case.get("price_band_high")}
+    out: dict = {
+        "issue_size_cr": case.get("issue_size_cr"),
+        "price_band_high": case.get("price_band_high"),
+        "listing_date": case.get("listing_date"),
+    }
     s = (case.get("structure") or "").lower()
     if s:
         out["structure"] = "OFS" if s.startswith("ofs") else "Fresh" if s.startswith("fresh") else "Mixed"
         out["ofs_share"] = {"OFS": 1.0, "Fresh": 0.0}.get(out["structure"])
     g = case.get("gmp") or {}
-    out.update(gmp_open=g.get("open"), gmp_peak=g.get("peak"), gmp_final=g.get("final"))
+    out.update(
+        gmp_open=g.get("open"),
+        gmp_peak=g.get("peak"),
+        gmp_latest=g.get("latest"),
+        gmp_final=g.get("final"),
+        gmp_latest_observed_at=g.get("latest_observed_at"),
+        gmp_final_observed_at=g.get("final_observed_at"),
+    )
     for k, v in (case.get("subscription") or {}).items():
         if k in _SUB_MAP:
             out[_SUB_MAP[k]] = v
     for k, v in (case.get("fundamentals") or {}).items():
         out["pat_cagr_pct" if k == "pat_cagr_fy24_26_pct" else k] = v
-    return {k: v for k, v in out.items() if v is not None and k in ALL_KEYS}
+    timestamp_keys = {"gmp_latest_observed_at", "gmp_final_observed_at"}
+    return {
+        k: v
+        for k, v in out.items()
+        if v is not None and (k in ALL_KEYS or k in timestamp_keys)
+    }
 
 
 def find_seed(name: str) -> tuple[str, dict] | None:
@@ -114,7 +132,10 @@ def collect(
                     snap.warnings.append(f"{fetcher.name}: {e}")
                     continue
                 if "gmp_current" in data:
-                    store.record_gmp(name, data.pop("gmp_current"), fetcher.name)
+                    current_gmp = data.pop("gmp_current")
+                    observed_at = store.record_gmp(name, current_gmp, fetcher.name)
+                    snap.set("gmp_latest", current_gmp, fetcher.name)
+                    snap.set("gmp_latest_observed_at", observed_at, fetcher.name)
                 for k, v in data.items():
                     snap.set(k, v, fetcher.name)
                 if isinstance(fetcher, GmpFetcher):
@@ -167,11 +188,13 @@ def collect(
         for key, point in (
             ("gmp_open", observations[0]),
             ("gmp_peak", peak),
-            ("gmp_final", observations[-1]),
+            ("gmp_latest", observations[-1]),
         ):
             snap.set(key, point[1], point[2])
+        snap.set("gmp_latest_observed_at", observations[-1][0], observations[-1][2])
     elif len(observations) == 1:
-        snap.set("gmp_final", observations[0][1], observations[0][2])
+        snap.set("gmp_latest", observations[0][1], observations[0][2])
+        snap.set("gmp_latest_observed_at", observations[0][0], observations[0][2])
 
     seed = find_seed(name)
     if seed:
@@ -183,6 +206,30 @@ def collect(
         snap.set(k, v, "manual file", overwrite=True)
     for k, v in (overrides or {}).items():
         snap.set(k, v, "user override", overwrite=True)
+
+    listing_date = snap.get("listing_date")
+    latest_timestamp = snap.get("gmp_latest_observed_at")
+    latest_gmp = snap.get("gmp_latest")
+    if listing_date and latest_timestamp and latest_gmp is not None:
+        try:
+            listing_day = pd.to_datetime(listing_date, errors="raise").date()
+            observed_day = pd.to_datetime(latest_timestamp, utc=True).tz_convert(
+                "Asia/Kolkata"
+            ).date()
+        except (TypeError, ValueError):
+            snap.warnings.append(
+                f"Could not determine whether latest GMP was observed on the final day before listing: "
+                f"listing date '{listing_date}', GMP timestamp '{latest_timestamp}'."
+            )
+        else:
+            if (listing_day - observed_day).days == 1:
+                snap.set("gmp_final", latest_gmp, "final-day GMP observation", overwrite=True)
+                snap.set(
+                    "gmp_final_observed_at",
+                    latest_timestamp,
+                    "final-day GMP observation",
+                    overwrite=True,
+                )
     return snap
 
 
@@ -196,30 +243,40 @@ def analyse(snap: Snapshot, models="auto") -> dict:
     missing = snap.missing_short_term()
     rep["missing_short_term"] = missing
     if not missing:
-        size, price, final = v["issue_size_cr"], v["price_band_high"], v["gmp_final"]
+        size, price = v["issue_size_cr"], v["price_band_high"]
+        current_gmp = v.get("gmp_final", v.get("gmp_latest"))
         known = v.get("sub_retail") is not None
         # Until retail subscription is known, assume the base case (retail 1-3x) rather than "no information".
         retail_assumption = v["sub_retail"] if known else 1.5
         breakdown = listing_gain_breakdown(
             size,
             price,
-            final,
+            current_gmp,
             v.get("gmp_open"),
             retail_assumption,
         )
         heur = breakdown["estimate_pct"]
-        rep["gmp_pct"] = round(gmp_pct(final, price), 1)
+        rep["gmp_pct"] = round(gmp_pct(current_gmp, price), 1)
         rep["heuristic_gain"] = round(heur, 1)
         rep["heuristic_breakdown"] = breakdown
         rep["heuristic_retail_used"] = retail_assumption
         rep["heuristic_retail_assumed"] = not known
         rep["heuristic_gmp_open"] = v.get("gmp_open")
         rep["gmp_explanation"] = {
-            "gmp_rupees": final,
+            "gmp_rupees": current_gmp,
             "offer_price_rupees": price,
         }
+        rep["gmp_finalized"] = v.get("gmp_final") is not None
+        rep["gmp_latest_observed_at"] = v.get("gmp_latest_observed_at")
         rep["subscription_known"] = known
-        ml = predict_one(models, v)
+        ml = predict_one(models, v) if rep["gmp_finalized"] else None
+        rep["ml_status"] = (
+            "Withheld until a final GMP observation from the last day before listing is available."
+            if ml is None and not rep["gmp_finalized"]
+            else "No trained ML model is available for this IPO's size tier."
+            if ml is None
+            else None
+        )
         rep["ml"] = ml
         use_ml = bool(ml) and (ml["tier"] == "small" or ml["n_train"] >= 5)
         rep["headline_gain"] = ml["q50"] if use_ml else rep["heuristic_gain"]
@@ -230,7 +287,7 @@ def analyse(snap: Snapshot, models="auto") -> dict:
         )
         rep["short_verdict"] = short_verdict(rep["headline_gain"])
         if not rep["subscription_known"]:
-            rep["scenarios"] = scenarios(size, price, final, v.get("gmp_open"))
+            rep["scenarios"] = scenarios(size, price, current_gmp, v.get("gmp_open"))
             rep["notes"].append("Retail subscription is not known yet; scenarios show the plausible range.")
         if v.get("structure") == "OFS" and size >= config.LARGE_CUTOFF_CR:
             rep["notes"].append(

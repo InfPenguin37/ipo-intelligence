@@ -12,7 +12,7 @@ def to_text(rep: dict) -> str:
     L.append("\nSHORT TERM (listing and the first weeks)")
     if rep["missing_short_term"]:
         L.append(f"  Cannot estimate yet. Missing: {', '.join(rep['missing_short_term'])}")
-        L.append("  Provide them with --set key=value (e.g. --set gmp_final=221).")
+        L.append("  Provide them with --set key=value (e.g. --set gmp_latest=221).")
     else:
         gmp = rep["gmp_explanation"]
         L.append(
@@ -20,6 +20,8 @@ def to_text(rep: dict) -> str:
             f"(₹{gmp['gmp_rupees']:,.2f} premium / ₹{gmp['offer_price_rupees']:,.2f} offer price; "
             "unofficial indicator, not a forecast)"
         )
+        if rep.get("gmp_latest_observed_at"):
+            L.append(f"    Latest GMP observation time: {rep['gmp_latest_observed_at']}")
         factors = rep["heuristic_breakdown"]
         L.append(f"  Rule-based heuristic:   {rep['heuristic_gain']:+.1f}%")
         L.append(
@@ -42,6 +44,8 @@ def to_text(rep: dict) -> str:
         if rep.get("ml"):
             m = rep["ml"]
             L.append(f"  ML estimate ({m['tier']}):    {m['q50']:+.1f}%  (80% band {m['q10']:+.1f}% to {m['q90']:+.1f}%)")
+        elif rep.get("ml_status"):
+            L.append(f"  ML status: {rep['ml_status']}")
         L.append(f"  Headline ({rep['basis']}): {rep['headline_gain']:+.1f}%  ->  {rep['short_verdict']}")
         for s in rep.get("scenarios", []):
             L.append(f"    {s['scenario']:<55} {s['est_gain_pct']:+5.1f}%  {s['call']}")

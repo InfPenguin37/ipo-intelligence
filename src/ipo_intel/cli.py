@@ -42,7 +42,7 @@ def _cmd_watch(a) -> int:
             if rep["missing_short_term"]:
                 print(f"[{stamp}] missing {rep['missing_short_term']}; {rep['warnings']}")
             else:
-                print(f"[{stamp}] GMP {rep['gmp_pct']:+.1f}%  headline {rep['headline_gain']:+.1f}%  {rep['short_verdict']}")
+                print(f"[{stamp}] latest GMP-implied return {rep['gmp_pct']:+.1f}%  headline {rep['headline_gain']:+.1f}%  {rep['short_verdict']}")
             time.sleep(a.every * 60)
     except KeyboardInterrupt:
         return 0

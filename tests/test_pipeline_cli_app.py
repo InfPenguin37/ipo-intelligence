@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
@@ -22,9 +23,31 @@ def test_parse_overrides():
         pipeline.parse_overrides(["sub_retail=abc"])
 
 
+def test_store_migrates_legacy_listing_gains_as_ambiguous(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-history.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE history (name TEXT PRIMARY KEY, listing_gain_pct REAL)"
+        )
+        connection.execute(
+            "INSERT INTO history (name, listing_gain_pct) VALUES (?, ?)",
+            ("Legacy IPO", 12.5),
+        )
+
+    history = Store(path).load_history()
+
+    assert history.loc[0, "listing_gain_pct"] == 12.5
+    assert history.loc[0, "listing_gain_basis"] == "source_defined_ambiguous"
+    assert pd.isna(history.loc[0, "listing_open_gain_pct"])
+
+
 def test_jio_run_from_seed_before_subscription():
     rep = pipeline.run("Jio Platforms")
     assert rep["missing_short_term"] == []
+    assert rep["gmp_finalized"] is False
+    assert rep["gmp_latest_observed_at"] == "2026-10-18"
     assert rep["heuristic_gain"] == pytest.approx(9.2, abs=0.1)  # base scenario: retail assumed 1-3x
     assert len(rep["scenarios"]) == 3
     assert rep["long_term"]["score"] == 64.0
@@ -52,7 +75,8 @@ def test_own_gmp_history_feeds_open_peak_final():
     for ts, g in [("2026-10-18T09:00:00", 150), ("2026-10-19T09:00:00", 240), ("2026-10-20T09:00:00", 200)]:
         store.record_gmp("Brand New Co", g, "test", ts)
     snap = pipeline.collect("Brand New Co", store=store)
-    assert (snap.get("gmp_open"), snap.get("gmp_peak"), snap.get("gmp_final")) == (150, 240, 200)
+    assert (snap.get("gmp_open"), snap.get("gmp_peak"), snap.get("gmp_latest")) == (150, 240, 200)
+    assert snap.get("gmp_final") is None
 
 
 def test_ipowatch_history_feeds_gmp_stats_and_keeps_source(monkeypatch, tmp_path):
@@ -73,13 +97,13 @@ def test_ipowatch_history_feeds_gmp_stats_and_keeps_source(monkeypatch, tmp_path
     sources = {row["field"]: row["source"] for row in snapshot.provenance()}
 
     assert [value for _, value, _ in observations] == [11.0, 5.0, 18.0]
-    assert (snapshot.get("gmp_open"), snapshot.get("gmp_peak"), snapshot.get("gmp_final")) == (
+    assert (snapshot.get("gmp_open"), snapshot.get("gmp_peak"), snapshot.get("gmp_latest")) == (
         11.0,
         18.0,
         18.0,
     )
     assert sources["gmp_open"] == "ipowatch-history"
-    assert sources["gmp_final"] == "gmp-table"
+    assert sources["gmp_latest"] == "gmp-table"
     store.record_gmp("Zetwerk", 11.0, "ipowatch-history", "2026-10-16T00:00:00")
     assert len(store.gmp_observations("Zetwerk")) == 3
 
@@ -134,7 +158,7 @@ def test_debt_repayment_conflict_is_warned_and_excluded(monkeypatch, tmp_path):
 
 def test_unknown_ipo_reports_what_is_missing():
     rep = pipeline.run("Totally Unknown Ltd")
-    assert set(rep["missing_short_term"]) == {"issue_size_cr", "price_band_high", "gmp_final"}
+    assert set(rep["missing_short_term"]) == {"issue_size_cr", "price_band_high", "gmp_latest"}
     assert rep["long_term"]["score"] is None
     assert rep["long_term"]["coverage_pct"] == 0
 
@@ -211,7 +235,22 @@ def test_cli_import_and_train(tmp_path, capsys):
     assert cli.main(["train"]) == 0
     assert "small_walk_forward" in capsys.readouterr().out
     rep = pipeline.run("Jio Platforms")
-    assert rep["ml"]["tier"] == "large"
+    assert rep["ml"] is None
+    assert "final GMP observation" in rep["ml_status"]
+
+
+def test_latest_gmp_becomes_final_only_on_last_pre_listing_day(tmp_path):
+    store = Store(tmp_path / "final-gmp.db")
+    store.record_gmp("IPO Before Listing", 125, "ipowatch-history", "2026-10-27T12:00:00+05:30")
+    snapshot = pipeline.collect(
+        "IPO Before Listing",
+        store=store,
+        overrides={"listing_date": "2026-10-28"},
+    )
+
+    assert snapshot.get("gmp_latest") == 125
+    assert snapshot.get("gmp_final") == 125
+    assert snapshot.get("gmp_final_observed_at") == "2026-10-27T06:30:00+00:00"
 
 
 def test_web_app_runs_end_to_end(monkeypatch, tmp_path):

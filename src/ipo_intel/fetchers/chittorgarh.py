@@ -60,6 +60,13 @@ def parse_details(tables: list[pd.DataFrame]) -> dict:
             nums = T.numbers(raw)
             if nums:
                 out["price_band_high"] = max(nums)
+        elif "listing date" in label:
+            listing_date = pd.to_datetime(
+                re.sub(r"\s*[A-Za-z]$", "", str(raw).strip()),
+                errors="coerce",
+            )
+            if pd.notna(listing_date):
+                out["listing_date"] = listing_date.date().isoformat()
         elif "fresh issue" in label and "size" not in label:
             fresh = T.rupee_crore(raw) if T.rupee_crore(raw) is not None else fresh
         elif "offer for sale" in label:
@@ -328,7 +335,11 @@ def parse_perf_tracker_data(payload: dict) -> pd.DataFrame:
         if not isinstance(name, str) or not name.strip() or gain is None:
             continue
 
-        parsed_row = {"name": name.strip(), "listing_gain_pct": gain}
+        parsed_row = {
+            "name": name.strip(),
+            "listing_gain_pct": gain,
+            "listing_gain_basis": "source_defined_ambiguous",
+        }
         listing_date = row.get("~IPO_listing_date") or row.get("Listed On")
         if listing_date:
             parsed_row["listing_date"] = str(listing_date).strip()

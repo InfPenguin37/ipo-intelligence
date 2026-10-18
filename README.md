@@ -101,6 +101,14 @@ Historical **GMP** is the hard part: public pages rarely keep it. Rows without G
 handled), but the GMP-to-listing-gain relationship is learned only from rows that have it. Supplying a CSV with
 `gmp_open`, `gmp_peak`, `gmp_final` columns will improve the models the most. See `docs/ML_PLAN.md`.
 
+Training uses `listing_open_gain_pct` only. The workbook's `List Price` and InvestorGain's `Listing Price`
+are mapped to opening price; `Listing Day Close` is stored separately as `listing_close_gain_pct`. Legacy
+`listing_gain_pct` values without a verified opening/closing definition are retained but excluded from training.
+For live IPOs, current GMP is stored and shown as `gmp_latest`; it is called `gmp_final` only when its recorded
+observation date is the calendar day before listing. Historical imported GMP without an observation timestamp
+remains marked as timing-unknown. `ipo train` reports label and feature coverage by size tier and disables the
+large-IPO GMP model when fewer than 25 labeled large IPOs have usable GMP.
+
 ## How the verdict is produced
 
 * **Raw GMP-implied return:** latest grey-market premium divided by the offer price. It is an unofficial market

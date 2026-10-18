@@ -20,7 +20,8 @@ _MARKET_LABELS = {
     "ofs_share": "Offer-for-sale share",
     "gmp_open": "Opening GMP",
     "gmp_peak": "Peak GMP",
-    "gmp_final": "Latest GMP",
+    "gmp_latest": "Latest GMP",
+    "gmp_final": "Final pre-listing GMP",
     "sub_overall": "Overall subscription",
     "sub_qib": "QIB subscription",
     "sub_nii": "NII subscription",
@@ -37,7 +38,7 @@ def _format_market_value(field: str, value: object) -> str:
             return f"{value * 100:.1f}%"
         if field.startswith("sub_"):
             return f"{value:g}×"
-        if field in {"price_band_high", "gmp_open", "gmp_peak", "gmp_final"}:
+        if field in {"price_band_high", "gmp_open", "gmp_peak", "gmp_latest", "gmp_final"}:
             return f"₹{value:,.2f}"
     return str(value)
 
@@ -151,7 +152,7 @@ with st.sidebar:
     with st.expander("Manual overrides", expanded=False):
         overrides_text = st.text_area(
             "One key=value per line",
-            placeholder="sub_retail=2.4\ngmp_final=250",
+            placeholder="sub_retail=2.4\ngmp_latest=250",
             help="Use this for subscription, GMP, issue details, or other values missing from the sources.",
         )
         st.caption("Fields: " + ", ".join(ALL_KEYS))
@@ -225,7 +226,7 @@ if submitted:
                     )
                 else:
                     st.metric("Model uncertainty range", "Not available")
-                    st.caption("A trained model is unavailable; the estimate uses the research heuristic.")
+                    st.caption(rep.get("ml_status") or "The estimate uses the research heuristic.")
 
             verdict = escape(rep["short_verdict"])
             verdict_class = _short_verdict_class(rep["short_verdict"])

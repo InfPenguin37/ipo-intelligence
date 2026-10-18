@@ -21,11 +21,17 @@ HISTORY_COLUMNS = [
     "gmp_open",
     "gmp_peak",
     "gmp_final",
+    "gmp_final_observed_at",
     "sub_overall",
     "sub_qib",
     "sub_nii",
     "sub_retail",
     "listing_gain_pct",
+    "listing_open_price",
+    "listing_close_price",
+    "listing_open_gain_pct",
+    "listing_close_gain_pct",
+    "listing_gain_basis",
     "day1_close_pct",
     "source",
 ]
@@ -35,8 +41,10 @@ CREATE TABLE IF NOT EXISTS gmp_history (ipo TEXT, ts TEXT, gmp REAL, source TEXT
 CREATE TABLE IF NOT EXISTS snapshots (ipo TEXT, ts TEXT, payload TEXT);
 CREATE TABLE IF NOT EXISTS history (
   name TEXT PRIMARY KEY, listing_date TEXT, issue_size_cr REAL, price_band_high REAL, ofs_share REAL,
-  gmp_open REAL, gmp_peak REAL, gmp_final REAL, sub_overall REAL, sub_qib REAL, sub_nii REAL,
-  sub_retail REAL, listing_gain_pct REAL, day1_close_pct REAL, source TEXT
+  gmp_open REAL, gmp_peak REAL, gmp_final REAL, gmp_final_observed_at TEXT,
+  sub_overall REAL, sub_qib REAL, sub_nii REAL, sub_retail REAL, listing_gain_pct REAL,
+  listing_open_price REAL, listing_close_price REAL, listing_open_gain_pct REAL,
+  listing_close_gain_pct REAL, listing_gain_basis TEXT, day1_close_pct REAL, source TEXT
 );
 """
 
@@ -48,9 +56,33 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.con = sqlite3.connect(self.path)
         self.con.executescript(_SCHEMA)
+        self._migrate_history_schema()
+
+    def _migrate_history_schema(self) -> None:
+        columns = {
+            "gmp_final_observed_at": "TEXT",
+            "listing_open_price": "REAL",
+            "listing_close_price": "REAL",
+            "listing_open_gain_pct": "REAL",
+            "listing_close_gain_pct": "REAL",
+            "listing_gain_basis": "TEXT",
+        }
+        existing = {
+            row[1] for row in self.con.execute("PRAGMA table_info(history)").fetchall()
+        }
+        for column, sql_type in columns.items():
+            if column not in existing:
+                self.con.execute(f"ALTER TABLE history ADD COLUMN {column} {sql_type}")
+        self.con.execute(
+            """
+            UPDATE history SET listing_gain_basis = 'source_defined_ambiguous'
+            WHERE listing_gain_pct IS NOT NULL AND listing_gain_basis IS NULL
+            """
+        )
+        self.con.commit()
 
     # -- GMP series -------------------------------------------------------------
-    def record_gmp(self, ipo: str, gmp: float, source: str, ts: str | None = None) -> None:
+    def record_gmp(self, ipo: str, gmp: float, source: str, ts: str | None = None) -> str:
         observed_at = datetime.fromisoformat(ts) if ts else datetime.now(timezone.utc)
         if observed_at.tzinfo is None:
             observed_at = observed_at.replace(tzinfo=timezone.utc)
@@ -66,6 +98,7 @@ class Store:
             (ipo.lower(), timestamp, float(gmp), source, ipo.lower(), timestamp, source),
         )
         self.con.commit()
+        return timestamp
 
     def gmp_series(self, ipo: str) -> list[tuple[str, float]]:
         cur = self.con.execute("SELECT ts, gmp FROM gmp_history WHERE ipo=? ORDER BY ts", (ipo.lower(),))
@@ -83,7 +116,7 @@ class Store:
         if not s:
             return None
         vals = [v for _, v in s]
-        return {"gmp_open": vals[0], "gmp_peak": max(vals), "gmp_final": vals[-1]}
+        return {"gmp_open": vals[0], "gmp_peak": max(vals), "gmp_latest": vals[-1]}
 
     # -- runs ---------------------------------------------------------------------
     def save_snapshot(self, ipo: str, payload: dict) -> None:

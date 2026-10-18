@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-TEXT_KEYS = {"structure", "listing_date"}
+TEXT_KEYS = {"structure", "listing_date", "gmp_latest_observed_at"}
 BOOL_KEYS = {"tariff_hike_dependent"}
 
 MARKET_KEYS = [
@@ -16,7 +16,8 @@ MARKET_KEYS = [
     "ofs_share",  # 0..1 share of the issue that is offer-for-sale
     "gmp_open",
     "gmp_peak",
-    "gmp_final",  # latest GMP in Rs per share
+    "gmp_latest",  # latest observed GMP; not necessarily the final pre-listing value
+    "gmp_final",  # GMP observed on the final day before listing
     "sub_overall",
     "sub_qib",
     "sub_nii",
@@ -56,9 +57,11 @@ FUNDAMENTAL_CONTEXT_KEYS = [
     "chittorgarh_net_proceeds_cr",
     "ipowatch_debt_repayment_cr",
     "ipowatch_no_listed_peers",
+    "gmp_latest_observed_at",
+    "gmp_final_observed_at",
 ]
 ALL_KEYS = MARKET_KEYS + FUNDAMENTAL_KEYS
-REQUIRED_FOR_SHORT_TERM = ["issue_size_cr", "price_band_high", "gmp_final"]
+REQUIRED_FOR_SHORT_TERM = ["issue_size_cr", "price_band_high", "gmp_latest"]
 
 
 def now_iso() -> str:
@@ -106,7 +109,14 @@ class Snapshot:
         return {k: d.value for k, d in self.data.items()}
 
     def missing_short_term(self) -> list[str]:
-        return [k for k in REQUIRED_FOR_SHORT_TERM if k not in self.data]
+        missing = [
+            key
+            for key in REQUIRED_FOR_SHORT_TERM
+            if key != "gmp_latest" and key not in self.data
+        ]
+        if "gmp_latest" not in self.data and "gmp_final" not in self.data:
+            missing.append("gmp_latest")
+        return missing
 
     def provenance(self) -> list[dict[str, Any]]:
         order = {k: i for i, k in enumerate(ALL_KEYS + FUNDAMENTAL_CONTEXT_KEYS)}

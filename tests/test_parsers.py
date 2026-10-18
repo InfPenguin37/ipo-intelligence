@@ -294,6 +294,7 @@ def test_perf_tracker_json():
         {
             "name": "Moneyview Ltd.",
             "listing_gain_pct": 58.47,
+            "listing_gain_basis": "source_defined_ambiguous",
             "listing_date": "2026-10-01T00:00:00.000Z",
             "price_band_high": 34.0,
             "issue_size_cr": 1091.68,
@@ -400,7 +401,12 @@ def test_kaggle_history_merge_matches_rows_and_preserves_gmp():
                 "IPO_Name": "Truncated Company",
                 "Issue_Size(crores)": 500,
                 "Offer Price": 100,
+                "List Price": 110,
+                "Listing Day Close": 130,
                 "Listing Gain": 15,
+                "CMP(BSE)": 140,
+                "CMP(NSE)": 141,
+                "Current Gains": 40,
                 "QIB": 4.2,
                 "HNI": 3.1,
                 "RII": 2.4,
@@ -442,6 +448,7 @@ def test_kaggle_history_merge_matches_rows_and_preserves_gmp():
                 "price_band_high": 100,
                 "gmp_final": 18,
                 "listing_gain_pct": 12,
+                "listing_gain_basis": "source_defined_ambiguous",
                 "source": "chittorgarh",
             }
         ],
@@ -453,12 +460,18 @@ def test_kaggle_history_merge_matches_rows_and_preserves_gmp():
     assert (merged.added, merged.updated, merged.skipped) == (2, 1, 1)
     matched = merged.rows.loc[merged.rows["name"] == "Truncated Company Limited"].iloc[0]
     assert matched["listing_gain_pct"] == 12
+    assert matched["listing_open_price"] == 110
+    assert matched["listing_open_gain_pct"] == 10
+    assert matched["listing_close_price"] == 130
+    assert matched["listing_close_gain_pct"] == 30
+    assert matched["listing_gain_basis"] == "opening_price_return"
     assert matched["issue_size_cr"] == 504
     assert matched["sub_qib"] == 4.2
     assert matched["gmp_open"] == 10
     assert matched["gmp_peak"] == 20
     assert matched["gmp_final"] == 18
     assert matched["source"] == "chittorgarh+kaggle:test.xlsx"
+    assert not {"CMP(BSE)", "CMP(NSE)", "Current Gains"} & set(HISTORY_COLUMNS)
     assert "Power Grid Corporation of India Ltd. (listed 2010-01-04)" in set(merged.rows["name"])
 
     repeat = merge_kaggle_history(incoming, merged.rows)
@@ -503,6 +516,11 @@ def test_investorgain_csv_maps_gmp_and_listing_outcome():
     assert mapped.loc[0, "sub_overall"] == 111.91
     assert mapped.loc[0, "gmp_final"] == 215
     assert mapped.loc[0, "listing_gain_pct"] == 95.62
+    assert mapped.loc[0, "listing_open_price"] == 626
+    assert mapped.loc[0, "listing_open_gain_pct"] == 95.62
+    assert mapped.loc[0, "listing_close_price"] == 728.6
+    assert mapped.loc[0, "listing_close_gain_pct"] == 127.69
+    assert mapped.loc[0, "listing_gain_basis"] == "opening_price_return"
     assert mapped.loc[1, "gmp_final"] == 0
 
 

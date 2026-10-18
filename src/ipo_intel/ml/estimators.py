@@ -16,6 +16,7 @@ from sklearn.preprocessing import StandardScaler
 
 from ..scoring.short_term import demand_factor, gmp_pct, gmp_ratio, trend_factor
 from .features import FEATURES
+from .targets import TRAINING_TARGET
 
 Z80 = 1.2816  # 80% central interval
 
@@ -95,7 +96,8 @@ class LargeModel:
     def fit(self, df: pd.DataFrame) -> "LargeModel":
         d = df.copy()
         d["_x"] = self.x(d)
-        d["_y"] = pd.to_numeric(d.get("listing_gain_pct"), errors="coerce")
+        target = d[TRAINING_TARGET] if TRAINING_TARGET in d else pd.Series(index=d.index, dtype=float)
+        d["_y"] = pd.to_numeric(target, errors="coerce")
         d = d.dropna(subset=["_x", "_y"])
         x, y = d["_x"].to_numpy(), d["_y"].to_numpy()
         self.n_train = len(x)

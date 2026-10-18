@@ -29,7 +29,8 @@
   "target": {
     "Jio Platforms (Oct 2026)": {
       "issue_size_cr": 30213, "structure": "Fresh (no OFS)", "price_band_high": 1119,
-      "gmp": {"open": 172, "peak": 224, "final": 221},
+      "listing_date": "2026-10-28",
+      "gmp": {"open": 172, "peak": 224, "latest": 221, "latest_observed_at": "2026-10-18"},
       "subscription": null,
       "fundamentals": {
         "pat_cagr_fy24_26_pct": 18.43,

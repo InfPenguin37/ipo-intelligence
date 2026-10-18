@@ -17,7 +17,7 @@ def _split(df, cutoff=5000):
 
 def test_small_model_quantiles_are_ordered():
     small, _ = _split(make_history())
-    X, y = build_features(small), small["listing_gain_pct"]
+    X, y = build_features(small), small["listing_open_gain_pct"]
     pred = SmallModel().fit(X, y).predict(X)
     assert list(pred.columns) == ["q10", "q50", "q90", "ridge"]
     assert (pred["q10"] <= pred["q50"]).all() and (pred["q50"] <= pred["q90"]).all()
@@ -26,7 +26,7 @@ def test_small_model_quantiles_are_ordered():
 def test_small_model_handles_missing_gmp_and_subscription():
     small, _ = _split(make_history())
     X = build_features(small)
-    model = SmallModel().fit(X, small["listing_gain_pct"])
+    model = SmallModel().fit(X, small["listing_open_gain_pct"])
     blank = build_features(pd.DataFrame([{"issue_size_cr": 800, "price_band_high": 300}]))
     assert model.predict(blank).notna().all(axis=None)
 
@@ -36,7 +36,7 @@ def test_small_model_drops_features_missing_for_every_training_row():
     X = build_features(small)
     X.loc[:, [column for column in X if column != "log_size"]] = float("nan")
 
-    model = SmallModel().fit(X, small["listing_gain_pct"])
+    model = SmallModel().fit(X, small["listing_open_gain_pct"])
 
     assert model.predict(X).notna().all(axis=None)
     assert model.gbm_features == ["log_size"]
@@ -72,9 +72,12 @@ def test_large_loo_runs():
 
 
 def test_train_all_saves_models_and_predicts_both_tiers():
-    hist = make_history()
+    hist = make_history(n_large=30)
     report = train_all(hist)
-    assert report["n_small"] == 150 and report["n_large"] == 12
+    assert report["n_small"] == 150 and report["n_large"] == 30
+    assert report["training_target"] == "listing_open_gain_pct"
+    assert report["coverage"]["all"]["with_gmp_final_observed_at"] == 0
+    assert report["coverage"]["large"]["usable_gmp_model_rows"] == 30
     assert "small_walk_forward" in report and "large_loo" in report
     models = load_models()
     assert models is not None
@@ -87,10 +90,36 @@ def test_train_all_saves_models_and_predicts_both_tiers():
         assert p["q10"] <= p["q50"] <= p["q90"]
 
 
+def test_training_ignores_ambiguous_and_closing_gain_labels():
+    history = make_history(n_small=100, n_large=30)
+    history["listing_gain_pct"] = history["listing_open_gain_pct"] + 30
+    history["listing_close_gain_pct"] = history["listing_open_gain_pct"] - 20
+
+    report = train_all(history)
+    models = load_models()
+
+    assert report["training_target"] == "listing_open_gain_pct"
+    assert models["small"].n_train == 100
+    assert models["large"].n_train == 30
+
+
+def test_large_model_is_disabled_below_gmp_coverage_threshold():
+    history = make_history(n_small=100, n_large=30)
+    large_indexes = history.index[history["issue_size_cr"] >= 5000][:6]
+    history.loc[large_indexes, "gmp_final"] = float("nan")
+
+    report = train_all(history)
+    models = load_models()
+
+    assert report["coverage"]["large"]["usable_gmp_model_rows"] == 24
+    assert models["large"] is None
+    assert "need at least 25" in report["large_note"]
+
+
 def test_too_little_small_data_falls_back_gracefully():
     hist = make_history(n_small=10, n_large=4)
     report = train_all(hist)
     assert "small_note" in report
     models = load_models()
     assert predict_one(models, {"issue_size_cr": 900, "price_band_high": 400, "gmp_final": 60}) is None
-    assert predict_one(models, {"issue_size_cr": 30000, "price_band_high": 1119, "gmp_final": 221}) is not None
+    assert predict_one(models, {"issue_size_cr": 30000, "price_band_high": 1119, "gmp_final": 221}) is None

@@ -9,6 +9,7 @@ import pandas as pd
 
 from .estimators import LargeModel, SmallModel
 from .features import build_features
+from .targets import TRAINING_TARGET
 
 
 def _mae(a, b) -> float:
@@ -25,11 +26,11 @@ def _sign_acc(actual, pred) -> float:
 
 def walk_forward_small(df: pd.DataFrame, min_train: int = 60, step: int = 10) -> pd.DataFrame:
     """Train on the past, predict the next `step` IPOs, repeat. Needs a listing_date column."""
-    d = df.dropna(subset=["listing_gain_pct"]).copy()
+    d = df.dropna(subset=[TRAINING_TARGET]).copy()
     d["_date"] = pd.to_datetime(d["listing_date"], errors="coerce")
     d = d.sort_values("_date").reset_index(drop=True)
     X = build_features(d)
-    y = pd.to_numeric(d["listing_gain_pct"])
+    y = pd.to_numeric(d[TRAINING_TARGET])
     parts = []
     for start in range(min_train, len(d), step):
         tr, te = slice(0, start), slice(start, min(start + step, len(d)))
@@ -43,7 +44,7 @@ def walk_forward_small(df: pd.DataFrame, min_train: int = 60, step: int = 10) ->
 
 
 def loo_large(df: pd.DataFrame) -> pd.DataFrame:
-    d = df.dropna(subset=["listing_gain_pct"]).reset_index(drop=True)
+    d = df.dropna(subset=[TRAINING_TARGET]).reset_index(drop=True)
     rows = []
     for i in range(len(d)):
         model = LargeModel().fit(d.drop(index=i))
@@ -52,7 +53,7 @@ def loo_large(df: pd.DataFrame) -> pd.DataFrame:
         rows.append(
             {
                 "name": d.loc[i, "name"],
-                "actual": d.loc[i, "listing_gain_pct"],
+                "actual": d.loc[i, TRAINING_TARGET],
                 "q10": p["q10"],
                 "q50": p["q50"],
                 "q90": p["q90"],

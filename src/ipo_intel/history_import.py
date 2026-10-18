@@ -24,6 +24,10 @@ _KAGGLE_COLUMNS = {
     "gmpfinal": "gmp_final",
     "finalgmp": "gmp_final",
     "gmp": "gmp_final",
+    "gmpfinalobservedat": "gmp_final_observed_at",
+    "listprice": "listing_open_price",
+    "listingclose": "listing_close_price",
+    "listingdayclose": "listing_close_price",
 }
 _NUMERIC = {
     "issue_size_cr",
@@ -36,6 +40,11 @@ _NUMERIC = {
     "gmp_open",
     "gmp_peak",
     "gmp_final",
+    "listing_open_price",
+    "listing_close_price",
+    "listing_open_gain_pct",
+    "listing_close_gain_pct",
+    "day1_close_pct",
 }
 
 
@@ -61,7 +70,7 @@ def _column_key(value) -> str:
 
 
 def map_kaggle_workbook(workbook: pd.DataFrame, source: str) -> pd.DataFrame:
-    """Map the Kaggle IPO workbook's columns to the training-history schema."""
+    """Map the IPO tracker columns, keeping opening and closing outcomes distinct."""
     columns = {_column_key(column): column for column in workbook.columns}
     required_headers = {
         "name": "iponame",
@@ -88,6 +97,34 @@ def map_kaggle_workbook(workbook: pd.DataFrame, source: str) -> pd.DataFrame:
     for field in _NUMERIC:
         if field in mapped:
             mapped[field] = pd.to_numeric(mapped[field], errors="coerce")
+    has_open_price = (
+        "listing_open_price" in mapped
+        and "price_band_high" in mapped
+        and mapped["listing_open_price"].notna()
+        & mapped["price_band_high"].gt(0)
+    )
+    if isinstance(has_open_price, pd.Series):
+        mapped["listing_open_gain_pct"] = (
+            (mapped["listing_open_price"] - mapped["price_band_high"])
+            / mapped["price_band_high"]
+            * 100
+        ).where(has_open_price)
+    else:
+        mapped["listing_open_gain_pct"] = None
+    if "listing_close_price" in mapped:
+        has_close_price = mapped["listing_close_price"].notna() & mapped["price_band_high"].gt(0)
+        mapped["listing_close_gain_pct"] = (
+            (mapped["listing_close_price"] - mapped["price_band_high"])
+            / mapped["price_band_high"]
+            * 100
+        ).where(has_close_price)
+    mapped["listing_gain_basis"] = mapped["listing_open_gain_pct"].map(
+        lambda value: "opening_price_return" if pd.notna(value) else "source_defined_ambiguous"
+    )
+    if "gmp_final_observed_at" in mapped:
+        mapped["gmp_final_observed_at"] = pd.to_datetime(
+            mapped["gmp_final_observed_at"], errors="coerce", utc=True
+        ).map(lambda value: value.isoformat() if pd.notna(value) else None)
     mapped["source"] = source
     return mapped.reindex(columns=HISTORY_COLUMNS)
 
@@ -122,6 +159,18 @@ def map_investorgain_csv(csv: pd.DataFrame, source: str) -> pd.DataFrame:
             + ", ".join(missing)
         )
 
+    open_price = csv[columns["listingprice"]].map(_first_number)
+    open_gain = csv[columns["listingprice"]].map(_percent_in_parens)
+    close_price = (
+        csv[columns["listingdayclose"]].map(_first_number)
+        if "listingdayclose" in columns
+        else None
+    )
+    close_gain = (
+        csv[columns["listingdayclose"]].map(_percent_in_parens)
+        if "listingdayclose" in columns
+        else None
+    )
     mapped = pd.DataFrame(
         {
             "name": csv[columns["ipo"]].astype("string").str.strip(),
@@ -134,7 +183,15 @@ def map_investorgain_csv(csv: pd.DataFrame, source: str) -> pd.DataFrame:
             if "sub" in columns
             else None,
             "gmp_final": csv[columns["gmp"]].map(_first_number),
-            "listing_gain_pct": csv[columns["listingprice"]].map(_percent_in_parens),
+            "listing_gain_pct": open_gain,
+            "listing_open_price": open_price,
+            "listing_close_price": close_price,
+            "listing_open_gain_pct": open_gain,
+            "listing_close_gain_pct": close_gain,
+            "day1_close_pct": close_gain,
+            "listing_gain_basis": open_gain.map(
+                lambda value: "opening_price_return" if pd.notna(value) else "source_defined_ambiguous"
+            ),
             "source": source,
         }
     )
@@ -200,6 +257,13 @@ def merge_kaggle_history(incoming: pd.DataFrame, existing: pd.DataFrame) -> Hist
             index = candidates[0]
             combined = dict(records[index])
             for field, value in imported.items():
+                if (
+                    field == "listing_gain_basis"
+                    and value == "opening_price_return"
+                    and combined.get(field) == "source_defined_ambiguous"
+                ):
+                    combined[field] = value
+                    continue
                 if (
                     field in {"name", "source"}
                     or pd.isna(value)

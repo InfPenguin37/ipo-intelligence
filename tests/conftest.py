@@ -44,9 +44,11 @@ def make_history(n_small=150, n_large=12, seed=0) -> pd.DataFrame:
 
     small = rows(n_small, 200, 4000)
     small["listing_gain_pct"] = 0.7 * (small["gmp_final"] / small["price_band_high"] * 100) + rng.normal(0, 4, n_small)
+    small["listing_open_gain_pct"] = small["listing_gain_pct"]
     large = rows(n_large, 5000, 30000)
     large["sub_retail"] = rng.uniform(0.5, 5, n_large)
     large["listing_gain_pct"] = 0.40 * LargeModel.x(large) + rng.normal(0, 2, n_large)
+    large["listing_open_gain_pct"] = large["listing_gain_pct"]
     df = pd.concat([small, large], ignore_index=True)
     df["name"] = [f"IPO {i}" for i in range(len(df))]
     df["listing_date"] = pd.date_range("2022-01-01", periods=len(df), freq="5D").astype(str)
