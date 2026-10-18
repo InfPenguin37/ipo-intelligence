@@ -13,8 +13,10 @@ git clone https://github.com/InfPenguin37/ipo-intelligence.git
 cd ipo-intelligence
 make setup                 # creates the `ipo-intel` conda env and installs the package
 conda activate ipo-intel
-make test                  # 31 tests should pass
+make test                  # tests should pass
 ```
+
+Without Conda, install the project and its dependencies with `python -m pip install -r requirements.txt`.
 
 ## Use it
 
@@ -46,10 +48,11 @@ ipo run jio --scrape
 
 * The fetchers read public web pages. They honour `robots.txt`, wait between requests and cache raw responses
   in `data/raw/`. Check each site's terms of use before relying on them. Don't lower `IPO_REQUEST_DELAY_S`.
-* **They were written without being able to reach the live sites**, so expect to tune them. The parsers match on
-  row labels and keywords, and the tests use synthetic HTML. If a field comes back empty, `ipo probe <url>` shows
-  what the page really contains; fix the URL in `.env.example` terms (env vars) or the parser, or send the output
-  to Claude.
+* `ipo collect-history` reads Chittorgarh's JSON performance-tracker endpoint. The `ipo probe` command inspects
+  HTML tables, so it reports zero tables for that JavaScript-rendered tracker page.
+* The GMP and IPO-detail scrapers may need tuning as those sites change. Parser tests use synthetic HTML and JSON.
+  If a field comes back empty, `ipo probe <url>` shows what the page exposes; adjust the URL via the documented
+  environment variables or update the parser.
 * A failed fetcher only produces a warning; the app falls back to seed data, your saved overrides, and the GMP
   history it recorded itself. Official NSE/BSE subscription pages are not scraped; read them and use `--set`.
 
@@ -57,10 +60,21 @@ ipo run jio --scrape
 
 ```bash
 export IPO_ENABLE_SCRAPERS=1
-ipo collect-history            # listing gains, size, subscription for past IPOs -> data/ipo.db
+ipo collect-history            # all available calendar years since 2004 -> data/ipo.db
+ipo collect-history --from-year 2015  # only 2015 through the current year
+ipo collect-history --limit 20        # optional cap for a small test run
 ipo import-csv my_history.csv  # or load your own CSV (needs name, listing_gain_pct; see store.HISTORY_COLUMNS)
+ipo import-excel "data/Initial Public Offering (Updated).xlsx"  # merge the Kaggle IPO workbook
 ipo train                      # trains both tiers, prints walk-forward / leave-one-out results
 ```
+
+History collection queries the performance tracker once per calendar year, from the current year back to 2004
+by default. It skips IPO names already in the local history database.
+The Excel importer maps the Kaggle workbook columns, merges likely matches by listing date and company name
+or issue price/size, fills missing fields without replacing existing values, and preserves existing GMP values.
+If you have GMP data, add `GMP Open`, `GMP Peak`, and `GMP Final` columns to the workbook; a single `GMP`
+column is treated as the final GMP. It skips incomplete/unlisted rows and keeps repeated issuer names on distinct
+IPO dates as separate records.
 
 Historical **GMP** is the hard part: public pages rarely keep it. Rows without GMP still train (missing values are
 handled), but the GMP-to-listing-gain relationship is learned only from rows that have it. Supplying a CSV with
@@ -84,7 +98,7 @@ src/ipo_intel/  scoring/  rule-based short and long-term scores
                 cli.py, app.py, store.py (SQLite), schema.py (fields + provenance)
 seed/           hand-collected facts: 4 past IPOs and Jio (web research, 2026-10-18)
 docs/ML_PLAN.md  the modelling plan and its limits
-tests/          31 tests (synthetic data for ML and parsers)
+tests/          tests (synthetic data for ML and parsers)
 ```
 
 ## Known limits

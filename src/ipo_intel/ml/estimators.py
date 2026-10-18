@@ -29,32 +29,41 @@ class SmallModel:
         keep = y.notna()
         X, y = X.loc[keep, FEATURES], y[keep]
         self.n_train = len(y)
-        self.gbm = {
-            q: HistGradientBoostingRegressor(
-                loss="quantile",
-                quantile=q,
-                max_depth=3,
-                learning_rate=0.05,
-                max_iter=200,
-                min_samples_leaf=10,
-                l2_regularization=1.0,
-                random_state=self.random_state,
-            ).fit(X, y)
-            for q in self.quantiles
-        }
+        self.gbm_features = [column for column in FEATURES if X[column].notna().any()]
+        self.gbm = {}
+        self.fallback_quantiles = None
+        if self.gbm_features:
+            self.gbm = {
+                q: HistGradientBoostingRegressor(
+                    loss="quantile",
+                    quantile=q,
+                    max_depth=3,
+                    learning_rate=0.05,
+                    max_iter=200,
+                    min_samples_leaf=10,
+                    l2_regularization=1.0,
+                    random_state=self.random_state,
+                ).fit(X[self.gbm_features], y)
+                for q in self.quantiles
+            }
+        else:
+            self.fallback_quantiles = np.quantile(y, self.quantiles)
         self.ridge = make_pipeline(
             SimpleImputer(strategy="median", add_indicator=True),
             StandardScaler(),
             RidgeCV(alphas=np.logspace(-2, 3, 12)),
-        ).fit(X, y)
+        ).fit(X[self.gbm_features], y)
         return self
 
     def predict(self, X: pd.DataFrame) -> pd.DataFrame:
         X = X[FEATURES]
-        q = np.column_stack([self.gbm[k].predict(X) for k in self.quantiles])
+        if self.gbm:
+            q = np.column_stack([self.gbm[k].predict(X[self.gbm_features]) for k in self.quantiles])
+        else:
+            q = np.tile(self.fallback_quantiles, (len(X), 1))
         q.sort(axis=1)  # quantiles must not cross
         out = pd.DataFrame(q, columns=["q10", "q50", "q90"], index=X.index)
-        out["ridge"] = self.ridge.predict(X)
+        out["ridge"] = self.ridge.predict(X[self.gbm_features])
         return out
 
 

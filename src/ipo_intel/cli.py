@@ -13,6 +13,7 @@ import pandas as pd
 from . import config, pipeline, report
 from .fetchers import ChittorgarhFetcher, FetchError, PoliteSession
 from .fetchers.tables import read_tables
+from .history_import import prepare_kaggle_import
 from .ml import train_all
 from .scoring import backtest
 from .store import HISTORY_COLUMNS, Store
@@ -49,7 +50,7 @@ def _cmd_collect_history(a) -> int:
         print("Set IPO_ENABLE_SCRAPERS=1 first (see README on scraping).", file=sys.stderr)
         return 2
     try:
-        n = ChittorgarhFetcher().collect_history(Store(), limit=a.limit)
+        n = ChittorgarhFetcher().collect_history(Store(), limit=a.limit, from_year=a.from_year)
     except FetchError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -64,6 +65,17 @@ def _cmd_import_csv(a) -> int:
         return 2
     df["source"] = df.get("source", f"csv:{Path(a.path).name}")
     print(f"Imported {Store().upsert_history(df)} rows.")
+    return 0
+
+
+def _cmd_import_excel(a) -> int:
+    store = Store()
+    imported = prepare_kaggle_import(a.path, store.load_history())
+    store.upsert_history(imported.rows)
+    print(
+        f"Added {imported.added} IPOs, updated {imported.updated} matches, "
+        f"skipped {imported.skipped} incomplete rows."
+    )
     return 0
 
 
@@ -122,11 +134,16 @@ def main(argv=None) -> int:
 
     c = sub.add_parser("collect-history", help="build the training table from listing history")
     c.add_argument("--limit", type=int, default=None)
+    c.add_argument("--from-year", type=int, default=2004, help="oldest calendar year to import (default: 2004)")
     c.set_defaults(fn=_cmd_collect_history)
 
     i = sub.add_parser("import-csv", help="load historical IPOs from a CSV")
     i.add_argument("path")
     i.set_defaults(fn=_cmd_import_csv)
+
+    x = sub.add_parser("import-excel", help="merge the Kaggle IPO history workbook")
+    x.add_argument("path")
+    x.set_defaults(fn=_cmd_import_excel)
 
     sub.add_parser("train", help="train ML models and print walk-forward results").set_defaults(fn=_cmd_train)
     sub.add_parser("backtest", help="rule-based estimator on the seed cases").set_defaults(fn=_cmd_backtest)

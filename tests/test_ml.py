@@ -31,6 +31,17 @@ def test_small_model_handles_missing_gmp_and_subscription():
     assert model.predict(blank).notna().all(axis=None)
 
 
+def test_small_model_drops_features_missing_for_every_training_row():
+    small, _ = _split(make_history())
+    X = build_features(small)
+    X.loc[:, [column for column in X if column != "log_size"]] = float("nan")
+
+    model = SmallModel().fit(X, small["listing_gain_pct"])
+
+    assert model.predict(X).notna().all(axis=None)
+    assert model.gbm_features == ["log_size"]
+
+
 def test_walk_forward_beats_raw_gmp_when_gmp_is_biased():
     small, _ = _split(make_history(n_small=200))
     res = walk_forward_small(small, min_train=60, step=20)

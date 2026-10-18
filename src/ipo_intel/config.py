@@ -20,14 +20,18 @@ MIN_SMALL_TRAIN = 60
 USER_AGENT = "ipo-intelligence/0.1 (personal research tool)"
 MIN_REQUEST_DELAY_S = float(os.environ.get("IPO_REQUEST_DELAY_S", "2.5"))
 
-# Source URLs. The GMP page was seen live while researching; the Chittorgarh report URLs are
-# UNVERIFIED defaults. If a fetch returns nothing useful, run `ipo probe <url>` and adjust.
+# Source URLs. Chittorgarh's performance tracker endpoint returns JSON by calendar year;
+# override IPO_PERF_URL if its endpoint changes.
 URLS = {
     "gmp": os.environ.get("IPO_GMP_URL", "https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/"),
     "ipo_list": os.environ.get(
         "IPO_LIST_URL", "https://www.chittorgarh.com/report/ipo-in-india-list-main-board-sme/82/"
     ),
-    "perf_tracker": os.environ.get("IPO_PERF_URL", "https://www.chittorgarh.com/ipo/ipo_perf_tracker.asp"),
+    "perf_tracker": os.environ.get(
+        "IPO_PERF_URL",
+        "https://webnodejs.chittorgarh.com/cloud/report/data-read/236/1/10/"
+        "{year}/{financial_year}/0/mainboard/0?search=",
+    ),
 }
 
 

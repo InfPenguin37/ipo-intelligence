@@ -1,14 +1,22 @@
 """Parser tests use small SYNTHETIC HTML fixtures shaped like the real pages. They prove the parsing
 logic, not that the live sites still look like this."""
+from datetime import date
+
+import pandas as pd
+
 from ipo_intel.fetchers import tables as T
 from ipo_intel.fetchers.chittorgarh import (
+    ChittorgarhFetcher,
     best_link,
     find_ipo_links,
     parse_details,
     parse_perf_tracker,
+    parse_perf_tracker_data,
     parse_subscription,
 )
 from ipo_intel.fetchers.gmp import parse_gmp
+from ipo_intel.history_import import map_kaggle_workbook, merge_kaggle_history
+from ipo_intel.store import HISTORY_COLUMNS
 
 DETAILS = """<table>
 <tr><td>Price Band</td><td>₹1065 to ₹1119 per share</td></tr>
@@ -34,6 +42,12 @@ PERF = """<table><thead><tr><th>Company</th><th>Listing Day Gain / Loss</th><th>
 <tr><td>Moneyview Ltd.</td><td>58.47%</td><td>58.91%</td></tr></tbody></table>"""
 
 
+def test_read_tables_parses_html_table():
+    tables = T.read_tables("<table><tr><th>Name</th></tr><tr><td>IPO</td></tr></table>")
+    assert len(tables) == 1
+    assert tables[0].iloc[0, 0] == "IPO"
+
+
 def test_details_fresh_issue():
     out = parse_details(T.read_tables(DETAILS))
     assert out["price_band_high"] == 1119
@@ -56,6 +70,196 @@ def test_perf_tracker():
     df = parse_perf_tracker(T.read_tables(PERF))
     assert list(df["name"]) == ["National Stock Exchange of India Ltd.", "Moneyview Ltd."]
     assert list(df["listing_gain_pct"]) == [1.85, 58.47]
+
+
+def test_perf_tracker_json():
+    df = parse_perf_tracker_data(
+        {
+            "reportTableData": [
+                {
+                    "Company": "Moneyview Ltd.",
+                    "~IPO_listing_date": "2026-10-01T00:00:00.000Z",
+                    "Issue Price (Rs.)": 34,
+                    "Issue Size (Rs.cr.)": "1,091.68",
+                    "Listing Day Gain (%)": 58.47,
+                },
+                {"Company": "No outcome yet", "Listing Day Gain (%)": None},
+            ]
+        }
+    )
+    assert df.to_dict("records") == [
+        {
+            "name": "Moneyview Ltd.",
+            "listing_gain_pct": 58.47,
+            "listing_date": "2026-10-01T00:00:00.000Z",
+            "price_band_high": 34.0,
+            "issue_size_cr": 1091.68,
+        }
+    ]
+
+
+def test_collect_history_uses_json_tracker_and_respects_limit():
+    class FakeHttp:
+        def __init__(self):
+            self.args = None
+
+        def get(self, url, as_json=False):
+            self.args = (url, as_json)
+            return {
+                "reportTableData": [
+                    {
+                        "Company": "Already saved",
+                        "Listing Day Gain (%)": 10,
+                    },
+                    {
+                        "Company": "New IPO",
+                        "Issue Price (Rs.)": 120,
+                        "Issue Size (Rs.cr.)": "500.00",
+                        "Listing Day Gain (%)": -2.5,
+                    },
+                    {
+                        "Company": "Beyond limit",
+                        "Listing Day Gain (%)": 5,
+                    },
+                ]
+            }
+
+    class FakeStore:
+        def __init__(self):
+            self.rows = []
+
+        def load_history(self):
+            return pd.DataFrame({"name": ["Already saved"]})
+
+        def upsert_history(self, frame):
+            self.rows.extend(frame.to_dict("records"))
+
+    http = FakeHttp()
+    store = FakeStore()
+    assert ChittorgarhFetcher(http).collect_history(store, limit=1, progress=lambda _: None) == 1
+
+    assert http.args is not None
+    url, as_json = http.args
+    assert "/cloud/report/data-read/236/1/10/" in url
+    assert as_json is True
+    assert [row["name"] for row in store.rows] == ["New IPO"]
+    assert store.rows[0]["issue_size_cr"] == 500.0
+    assert store.rows[0]["source"] == "chittorgarh"
+
+
+def test_collect_history_fetches_each_year_back_to_from_year():
+    class FakeHttp:
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url, as_json=False):
+            self.urls.append((url, as_json))
+            year = int(url.split("/data-read/236/1/10/", 1)[1].split("/", 1)[0])
+            return {
+                "reportTableData": [
+                    {
+                        "Company": f"IPO {year}",
+                        "Listing Day Gain (%)": year % 10,
+                    }
+                ]
+            }
+
+    class FakeStore:
+        def __init__(self):
+            self.rows = []
+
+        def load_history(self):
+            return pd.DataFrame(columns=["name"])
+
+        def upsert_history(self, frame):
+            self.rows.extend(frame.to_dict("records"))
+
+    current_year = date.today().year
+    http = FakeHttp()
+    store = FakeStore()
+    assert ChittorgarhFetcher(http).collect_history(
+        store, from_year=current_year - 1, progress=lambda _: None
+    ) == 2
+
+    assert [int(url.split("/data-read/236/1/10/", 1)[1].split("/", 1)[0]) for url, _ in http.urls] == [
+        current_year,
+        current_year - 1,
+    ]
+    assert all(as_json for _, as_json in http.urls)
+    assert [row["name"] for row in store.rows] == [f"IPO {current_year}", f"IPO {current_year - 1}"]
+
+
+def test_kaggle_history_merge_matches_rows_and_preserves_gmp():
+    workbook = pd.DataFrame(
+        [
+            {
+                "Date": "2025-01-02",
+                "IPO_Name": "Truncated Company",
+                "Issue_Size(crores)": 500,
+                "Offer Price": 100,
+                "Listing Gain": 15,
+                "QIB": 4.2,
+                "HNI": 3.1,
+                "RII": 2.4,
+                "Total": 3.2,
+                "GMP Open": 10,
+                "GMP Peak": 20,
+                "GMP Final": 15,
+            },
+            {
+                "Date": "2025-01-03",
+                "IPO_Name": "Power Grid Corporation of India Ltd.",
+                "Issue_Size(crores)": 100,
+                "Offer Price": 50,
+                "Listing Gain": 8,
+            },
+            {
+                "Date": "2010-01-04",
+                "IPO_Name": "Power Grid Corporation of India Ltd.",
+                "Issue_Size(crores)": 200,
+                "Offer Price": 25,
+                "Listing Gain": 12,
+            },
+            {
+                "Date": "2025-01-05",
+                "IPO_Name": "Pending IPO",
+                "Issue_Size(crores)": 100,
+                "Offer Price": 100,
+                "Listing Gain": None,
+            },
+        ]
+    )
+    incoming = map_kaggle_workbook(workbook, "kaggle:test.xlsx")
+    existing = pd.DataFrame(
+        [
+            {
+                "name": "Truncated Company Limited",
+                "listing_date": "2025-01-02T00:00:00Z",
+                "issue_size_cr": 504,
+                "price_band_high": 100,
+                "gmp_final": 18,
+                "listing_gain_pct": 12,
+                "source": "chittorgarh",
+            }
+        ],
+        columns=HISTORY_COLUMNS,
+    )
+
+    merged = merge_kaggle_history(incoming, existing)
+
+    assert (merged.added, merged.updated, merged.skipped) == (2, 1, 1)
+    matched = merged.rows.loc[merged.rows["name"] == "Truncated Company Limited"].iloc[0]
+    assert matched["listing_gain_pct"] == 12
+    assert matched["issue_size_cr"] == 504
+    assert matched["sub_qib"] == 4.2
+    assert matched["gmp_open"] == 10
+    assert matched["gmp_peak"] == 20
+    assert matched["gmp_final"] == 18
+    assert matched["source"] == "chittorgarh+kaggle:test.xlsx"
+    assert "Power Grid Corporation of India Ltd. (listed 2010-01-04)" in set(merged.rows["name"])
+
+    repeat = merge_kaggle_history(incoming, merged.rows)
+    assert (repeat.added, repeat.updated, repeat.skipped) == (0, 3, 1)
 
 
 def test_link_discovery():

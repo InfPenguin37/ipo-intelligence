@@ -1,13 +1,12 @@
 """Optional scraper for IPO details, subscription and listing history from Chittorgarh.
 
-The page layouts here have NOT been verified against the live site (the development sandbox could
-not reach it). Parsers match on row labels and keywords so they tolerate layout changes, but if a
-field comes back empty run `ipo probe <url>` and adjust. Respect the site's terms of use.
+Page layouts may change; run `ipo probe <url>` if a field comes back empty. Respect the site's terms of use.
 """
 from __future__ import annotations
 
 import difflib
 import re
+from datetime import date
 
 import pandas as pd
 
@@ -121,6 +120,42 @@ def parse_perf_tracker(tables: list[pd.DataFrame]) -> pd.DataFrame:
     return out.dropna(subset=["listing_gain_pct"]) if "listing_gain_pct" in out else out
 
 
+def parse_perf_tracker_data(payload: dict) -> pd.DataFrame:
+    """Parse the JSON rows returned by Chittorgarh's current performance tracker."""
+    if not isinstance(payload, dict):
+        return pd.DataFrame()
+    rows = payload.get("reportTableData")
+    if not isinstance(rows, list):
+        return pd.DataFrame()
+
+    parsed = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("Company")
+        gain = T.to_num(row.get("Listing Day Gain (%)"))
+        if not isinstance(name, str) or not name.strip() or gain is None:
+            continue
+
+        parsed_row = {"name": name.strip(), "listing_gain_pct": gain}
+        listing_date = row.get("~IPO_listing_date") or row.get("Listed On")
+        if listing_date:
+            parsed_row["listing_date"] = str(listing_date).strip()
+        issue_price = T.to_num(row.get("Issue Price (Rs.)"))
+        if issue_price is not None:
+            parsed_row["price_band_high"] = issue_price
+        issue_size = T.to_num(row.get("Issue Size (Rs.cr.)"))
+        if issue_size is not None:
+            parsed_row["issue_size_cr"] = issue_size
+        parsed.append(parsed_row)
+    return pd.DataFrame(parsed)
+
+
+def performance_tracker_url(year: int) -> str:
+    fiscal_year = f"{year}-{(year + 1) % 100:02d}"
+    return config.URLS["perf_tracker"].format(year=year, financial_year=fiscal_year)
+
+
 class ChittorgarhFetcher(Fetcher):
     name = "chittorgarh"
 
@@ -143,31 +178,36 @@ class ChittorgarhFetcher(Fetcher):
             raise FetchError("page fetched but no known fields could be parsed; try `ipo probe`")
         return out
 
-    def collect_history(self, store, limit: int | None = None, progress=print) -> int:
-        """Listing gains from the tracker, enriched with size and subscription from each IPO page."""
-        html = self.http.get(config.URLS["perf_tracker"])
-        perf = parse_perf_tracker(T.read_tables(html))
-        if perf.empty:
-            raise FetchError("could not parse the performance tracker table; try `ipo probe`")
-        links = find_ipo_links(html)
-        known = set(store.load_history()["name"]) if len(store.load_history()) else set()
+    def collect_history(
+        self, store, limit: int | None = None, from_year: int = 2004, progress=print
+    ) -> int:
+        """Import historical listing outcomes, newest first, back to `from_year`."""
+        today = date.today()
+        if not 2004 <= from_year <= today.year:
+            raise FetchError(f"start year must be between 2004 and {today.year}, got {from_year}")
+
+        history = store.load_history()
+        known = set(history["name"]) if not history.empty else set()
         done = 0
-        for _, r in perf.iterrows():
-            if r["name"] in known:
-                continue
-            row = r.to_dict()
-            row["source"] = "chittorgarh"
-            href = best_link(r["name"], links)
-            if href:
-                try:
-                    url = href if href.startswith("http") else "https://www.chittorgarh.com" + href
-                    tables = T.read_tables(self.http.get(url))
-                    row.update({**parse_details(tables), **parse_subscription(tables)})
-                except FetchError as e:
-                    progress(f"  skipped detail page for {r['name']}: {e}")
-            store.upsert_history(pd.DataFrame([row]))
-            done += 1
-            progress(f"[{done}] {r['name']}")
-            if limit and done >= limit:
-                break
+        for year in range(today.year, from_year - 1, -1):
+            payload = self.http.get(performance_tracker_url(year), as_json=True)
+            perf = parse_perf_tracker_data(payload)
+            if perf.empty:
+                raise FetchError(
+                    f"Chittorgarh performance tracker JSON had no usable rows for {year}; check IPO_PERF_URL "
+                    "and the cached response under data/raw/"
+                )
+
+            for _, r in perf.iterrows():
+                name = r["name"]
+                if name in known:
+                    continue
+                row = r.to_dict()
+                row["source"] = "chittorgarh"
+                store.upsert_history(pd.DataFrame([row]))
+                known.add(name)
+                done += 1
+                progress(f"[{done}] {name}")
+                if limit is not None and done >= limit:
+                    return done
         return done
