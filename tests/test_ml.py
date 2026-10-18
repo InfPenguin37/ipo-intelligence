@@ -1,6 +1,8 @@
+import joblib
 import pandas as pd
 import pytest
 
+from ipo_intel import config
 from conftest import make_history
 from ipo_intel.ml import load_models, predict_one, train_all
 from ipo_intel.ml.estimators import LargeModel, SmallModel
@@ -88,6 +90,36 @@ def test_train_all_saves_models_and_predicts_both_tiers():
         p = predict_one(models, vals)
         assert p["tier"] == tier
         assert p["q10"] <= p["q50"] <= p["q90"]
+
+
+def test_bundled_pretrained_models_work_without_local_data():
+    assert not (config.MODELS_DIR / "models.joblib").exists()
+
+    models = load_models()
+
+    assert models is not None
+    assert models["small"] is not None
+    prediction = predict_one(
+        models,
+        {
+            "issue_size_cr": 900,
+            "price_band_high": 400,
+            "gmp_final": 60,
+            "gmp_open": 50,
+            "sub_retail": 8,
+        },
+    )
+    assert prediction is not None
+    assert prediction["tier"] == "small"
+    assert prediction["q10"] <= prediction["q50"] <= prediction["q90"]
+
+
+def test_local_models_override_bundled_pretrained_models():
+    local_path = config.MODELS_DIR / "models.joblib"
+    local_path.parent.mkdir(parents=True)
+    joblib.dump({"local_override": True}, local_path)
+
+    assert load_models() == {"local_override": True}
 
 
 def test_training_ignores_ambiguous_and_closing_gain_labels():

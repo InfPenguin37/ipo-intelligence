@@ -28,5 +28,8 @@ ipo = "ipo_intel.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+ipo_intel = ["pretrained_models.joblib"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

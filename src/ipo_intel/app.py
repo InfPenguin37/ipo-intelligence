@@ -5,6 +5,7 @@ from html import escape
 
 import pandas as pd
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
 from ipo_intel import pipeline
 from ipo_intel.config import scrapers_enabled
@@ -53,6 +54,16 @@ def _short_verdict_class(verdict: str) -> str:
     if verdict == "AVOID":
         return "verdict-avoid"
     return "verdict-unknown"
+
+
+def _live_fetch_enabled() -> bool:
+    if not scrapers_enabled():
+        return False
+    try:
+        setting = st.secrets.get("IPO_ENABLE_SCRAPERS")
+    except StreamlitSecretNotFoundError:
+        return True
+    return setting is None or str(setting).strip() == "1"
 
 
 st.markdown(
@@ -129,6 +140,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+live_fetch_enabled = _live_fetch_enabled()
+
 with st.sidebar:
     st.markdown('<div class="eyebrow">IPO INTELLIGENCE</div>', unsafe_allow_html=True)
     st.title("Research desk")
@@ -138,16 +151,16 @@ with st.sidebar:
         name = st.text_input("IPO name", value="Jio Platforms")
         live = st.checkbox(
             "Fetch live data",
-            value=True,
-            disabled=not scrapers_enabled(),
+            value=live_fetch_enabled,
+            disabled=not live_fetch_enabled,
             help=(
                 "Fetch IPOWatch GMP and overview data, plus Chittorgarh issue, subscription and financials."
             ),
         )
         submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
 
-    if not scrapers_enabled():
-        st.caption("Live fetching is disabled by `IPO_ENABLE_SCRAPERS=0`.")
+    if not live_fetch_enabled:
+        st.caption("Live fetching is disabled by the deployment setting.")
 
     with st.expander("Manual overrides", expanded=False):
         overrides_text = st.text_area(
@@ -177,7 +190,7 @@ if submitted:
     with st.spinner("Collecting data and scoring..."):
         rep = pipeline.run(
             name.strip(),
-            scrape=live and scrapers_enabled(),
+            scrape=live and live_fetch_enabled,
             overrides=overrides,
         )
 

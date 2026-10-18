@@ -28,6 +28,12 @@ ipo app                                          # web UI with a Run button (sam
 ipo backtest                                     # rule-based estimator on the 4 seed IPOs
 ```
 
+The repository includes pretrained short-term models, so a fresh clone can use ML predictions without downloading
+the historical training data. A locally trained model in `data/models/models.joblib` takes precedence; run
+`ipo train` to create or update it. The bundled model was serialized with Python 3.12.15, scikit-learn 1.9.1,
+NumPy 2.5.4, pandas 3.0.6 and joblib 1.6.0. Python pickle/joblib artifacts should only be loaded from trusted sources,
+and scikit-learn models are not guaranteed to be portable across library versions.
+
 Fields you can set: see the list in the web UI's "Manual overrides" box (`gmp_final`, `sub_qib`, `sub_nii`,
 `sub_retail`, `sub_overall`, `issue_size_cr`, `price_band_high`, `pe`, `roce_pct`, ...).
 
@@ -112,6 +118,14 @@ observation date is the calendar day before listing. Historical imported GMP wit
 remains marked as timing-unknown. `ipo train` reports label and feature coverage by size tier and disables the
 large-IPO GMP model when fewer than 25 labeled large IPOs have usable GMP.
 
+The short-term pretrained models are bundled with the package, so the app can make predictions from a fresh clone
+without the historical training database. A local model takes precedence after `ipo train`; see
+[`docs/ML_TECHNIQUES.md`](docs/ML_TECHNIQUES.md) for the training snapshot and limits.
+
+For free hosting, deploy `src/ipo_intel/app.py` from GitHub using Streamlit Community Cloud. The bundled model is
+available there too, but its runtime-local SQLite history is not durable. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for setup steps and hosting caveats.
+
 ## How the verdict is produced
 
 * **Raw GMP-implied return:** latest grey-market premium divided by the offer price. It is an unofficial market
@@ -140,6 +154,7 @@ src/ipo_intel/  scoring/  rule-based short and long-term scores
 seed/           hand-collected facts: 4 past IPOs and Jio (web research, 2026-10-18)
 docs/ML_TECHNIQUES.md  implemented short-term models, evaluation and limitations
 docs/ML_PLAN.md        the modelling plan and its limits
+docs/DEPLOYMENT.md     free Streamlit Community Cloud deployment
 tests/          tests (synthetic data for ML and parsers)
 ```
 
@@ -148,3 +163,5 @@ tests/          tests (synthetic data for ML and parsers)
 * The 4-IPO backtest is a sanity check: its parameters were set knowing the outcomes.
 * The seed Jio numbers are a snapshot from 2026-10-18; update them with `--set` as bidding progresses.
 * Not modelled: market regime on listing day, anchor-book quality, lock-in expiries, index-inclusion flows.
+* The bundled ML model makes the app usable without local history, but its training labels and historical GMP timing
+  have the coverage and point-in-time limitations described in [`docs/ML_TECHNIQUES.md`](docs/ML_TECHNIQUES.md).

@@ -125,8 +125,12 @@ def train_all(history: pd.DataFrame, cutoff: float | None = None) -> dict:
 
 
 def load_models() -> dict | None:
-    path = config.MODELS_DIR / "models.joblib"
-    return joblib.load(path) if path.exists() else None
+    local_path = config.MODELS_DIR / "models.joblib"
+    if local_path.exists():
+        return joblib.load(local_path)
+    if config.PRETRAINED_MODELS_PATH.exists():
+        return joblib.load(config.PRETRAINED_MODELS_PATH)
+    return None
 
 
 def predict_one(models: dict | None, values: dict) -> dict | None:

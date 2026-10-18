@@ -56,7 +56,9 @@ def test_jio_run_from_seed_before_subscription():
 
 def test_overrides_beat_seed_and_remove_scenarios():
     rep = pipeline.run("Jio Platforms", overrides={"sub_retail": 4.0, "gmp_final": 280.0})
-    assert rep["headline_gain"] == pytest.approx(22.5, abs=0.2)
+    assert rep["heuristic_gain"] == pytest.approx(22.5, abs=0.2)
+    assert rep["ml"] is not None
+    assert rep["headline_gain"] == rep["ml"]["q50"]
     assert rep["short_verdict"] == "STRONG APPLY"
     assert "scenarios" not in rep
     srcs = {r["field"]: r["source"] for r in rep["provenance"]}
@@ -288,7 +290,7 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "Store", app_store)
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
-    assert at.checkbox[0].value is True
+    assert at.checkbox[0].value is False
     at.text_area[0].input("sub_retail=2.4").run()
     at.button[0].click().run()
     assert not at.exception
@@ -309,3 +311,23 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
         "Source" in str(dataframe.proto) and "Snapshot time (UTC)" in str(dataframe.proto)
         for dataframe in at.dataframe
     )
+
+
+def test_web_app_honors_deployment_secret_to_disable_live_fetch(monkeypatch):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "0")
+
+    at = AppTest.from_file(APP, default_timeout=60).run()
+
+    assert not at.exception
+    assert at.checkbox[0].value is False
+    assert at.checkbox[0].disabled is True
+
+
+def test_web_app_defaults_to_live_fetch_without_deployment_secret(monkeypatch):
+    monkeypatch.delenv("IPO_ENABLE_SCRAPERS", raising=False)
+
+    at = AppTest.from_file(APP, default_timeout=60).run()
+
+    assert not at.exception
+    assert at.checkbox[0].value is True
+    assert at.checkbox[0].disabled is False

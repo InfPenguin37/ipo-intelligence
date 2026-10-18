@@ -10,6 +10,7 @@ DB_PATH = DATA / "ipo.db"
 RAW_DIR = DATA / "raw"
 MANUAL_DIR = DATA / "manual"
 MODELS_DIR = DATA / "models"
+PRETRAINED_MODELS_PATH = Path(__file__).with_name("pretrained_models.joblib")
 SEED_PATH = ROOT / "seed" / "ipo_cases.json"
 
 # Issues at or above this size (Rs crore) are treated as "large" by the ML layer.
