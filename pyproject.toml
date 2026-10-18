@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ipo-intelligence"
+version = "0.1.0"
+description = "Local IPO analysis: fetch latest IPO data, score it, and give short- and long-term verdicts for Indian IPOs."
+requires-python = ">=3.10"
+dependencies = [
+  "pandas>=2.0",
+  "numpy>=1.26",
+  "scikit-learn>=1.3",
+  "requests>=2.31",
+  "lxml>=5.0",
+  "joblib>=1.3",
+  "streamlit>=1.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+ipo = "ipo_intel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
