@@ -20,12 +20,15 @@ from .store import HISTORY_COLUMNS, Store
 
 
 def _cmd_run(a) -> int:
+    if a.screener_url and not a.scrape:
+        print("error: --screener-url requires live fetching; remove --no-scrape.", file=sys.stderr)
+        return 2
     try:
         overrides = pipeline.parse_overrides(a.set)
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    rep = pipeline.run(a.name, scrape=a.scrape, overrides=overrides, save=a.save)
+    rep = pipeline.run(a.name, scrape=a.scrape, screener_url=a.screener_url, overrides=overrides, save=a.save)
     print(json.dumps(rep, indent=2, default=str) if a.json else report.to_text(rep))
     return 0
 
@@ -135,6 +138,7 @@ def main(argv=None) -> int:
     r.add_argument("--scrape", action="store_true", help=argparse.SUPPRESS)
     r.add_argument("--no-scrape", action="store_false", dest="scrape", help="skip live data fetching")
     r.set_defaults(scrape=True)
+    r.add_argument("--screener-url", help="direct Screener company URL; requires live fetching")
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override a field, repeatable")
     r.add_argument("--save", action="store_true", help="persist --set values for this IPO")
     r.add_argument("--json", action="store_true")

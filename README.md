@@ -49,6 +49,13 @@ The app and `ipo run` fetch current public GMP and subscription data by default.
 the app or use `ipo run jio --no-scrape` to skip fetching for one analysis. To disable live fetching entirely,
 set `IPO_ENABLE_SCRAPERS=0` before starting the app or CLI.
 
+For Screener fundamentals, paste a direct company page URL in the app's **Screener company URL** field or pass
+`--screener-url https://www.screener.in/company/.../consolidated/` to `ipo run`. Search is not automated because
+Screener's `robots.txt` disallows its search query URLs. The fetcher reads supported financial tables from the
+provided company page: the latest annual operating margin and ROCE, three-year PAT CAGR when all four annual
+profits are positive, and latest-quarter PAT growth when both comparable quarters are profitable. Other or
+non-meaningful values (such as growth rates spanning losses) are omitted.
+
 * The fetchers read public web pages. They honour `robots.txt`, wait between requests and cache raw responses
   in `data/raw/`. Check each site's terms of use before relying on them. Don't lower `IPO_REQUEST_DELAY_S`.
 * `ipo collect-history` reads Chittorgarh's JSON performance-tracker endpoint. The `ipo probe` command inspects

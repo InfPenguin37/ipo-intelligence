@@ -3,8 +3,10 @@ logic, not that the live sites still look like this."""
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from ipo_intel.fetchers import tables as T
+from ipo_intel.fetchers import FetchError, PoliteSession
 from ipo_intel.fetchers.chittorgarh import (
     ChittorgarhFetcher,
     best_link,
@@ -15,6 +17,7 @@ from ipo_intel.fetchers.chittorgarh import (
     parse_subscription,
 )
 from ipo_intel.fetchers.gmp import find_gmp_history_url, parse_gmp, parse_gmp_history
+from ipo_intel.fetchers.screener import ScreenerFetcher, parse_fundamentals
 from ipo_intel.history_import import (
     map_investorgain_csv,
     map_kaggle_workbook,
@@ -71,6 +74,53 @@ def test_subscription_ignores_share_allocation_tables():
     <tr><td>Retail</td><td>33130716</td><td>500.27</td><td>9.98%</td></tr>
     </table>"""
     assert parse_subscription(T.read_tables(allocations)) == {}
+
+
+def test_screener_extracts_supported_fundamentals():
+    html = """<table>
+    <tr><th></th><th>Mar 2023</th><th>Mar 2024</th><th>Mar 2025</th><th>Mar 2026</th></tr>
+    <tr><td>Net Profit +</td><td>100</td><td>120</td><td>144</td><td>172.8</td></tr>
+    <tr><td>OPM %</td><td>10%</td><td>11%</td><td>12%</td><td>13%</td></tr>
+    </table>
+    <table>
+    <tr><th></th><th>Mar 2025</th><th>Jun 2025</th><th>Mar 2026</th><th>Jun 2026</th></tr>
+    <tr><td>Net Profit +</td><td>8</td><td>20</td><td>10</td><td>30</td></tr>
+    </table>
+    <table>
+    <tr><th></th><th>Mar 2023</th><th>Mar 2024</th><th>Mar 2025</th><th>Mar 2026</th></tr>
+    <tr><td>ROCE %</td><td>8%</td><td>11%</td><td>13%</td><td>15%</td></tr>
+    </table>"""
+
+    result = parse_fundamentals(T.read_tables(html))
+
+    assert result["pat_cagr_pct"] == pytest.approx(20)
+    assert result["latest_qtr_pat_growth_pct"] == pytest.approx(50)
+    assert result["ebitda_margin_pct"] == 13
+    assert result["roce_pct"] == 15
+
+
+def test_screener_omits_growth_when_pat_values_are_not_positive():
+    html = """<table>
+    <tr><th></th><th>Mar 2023</th><th>Mar 2024</th><th>Mar 2025</th><th>Mar 2026</th></tr>
+    <tr><td>Net Profit +</td><td>100</td><td>-20</td><td>10</td><td>20</td></tr>
+    <tr><td>OPM %</td><td>-5%</td><td>0%</td><td>1%</td><td>2%</td></tr>
+    </table>"""
+    assert parse_fundamentals(T.read_tables(html)) == {"ebitda_margin_pct": 2}
+
+
+def test_screener_fetch_requires_direct_company_url():
+    class FakeHttp(PoliteSession):
+        def get(self, url):
+            raise AssertionError(f"must reject URL before fetching: {url}")
+
+    fetcher = ScreenerFetcher(FakeHttp())
+    for url in (
+        "http://www.screener.in/company/123/",
+        "https://www.screener.in/?q=zetwerk",
+        "https://example.com/company/123/",
+    ):
+        with pytest.raises(FetchError, match="direct HTTPS Screener company URL"):
+            fetcher.fetch("Zetwerk", url)
 
 
 def test_chittorgarh_fetches_subscription_from_dedicated_ipo_page():

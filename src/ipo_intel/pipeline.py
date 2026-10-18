@@ -5,7 +5,7 @@ import json
 import re
 
 from . import config
-from .fetchers import ChittorgarhFetcher, FetchError, GmpFetcher, PoliteSession
+from .fetchers import ChittorgarhFetcher, FetchError, GmpFetcher, PoliteSession, ScreenerFetcher
 from .fetchers.tables import name_matches
 from .ml import load_models, predict_one
 from .schema import ALL_KEYS, FUNDAMENTAL_KEYS, Snapshot, coerce
@@ -83,7 +83,14 @@ def save_manual(name: str, values: dict) -> None:
 
 
 # ------------------------------------------------------------------ collect
-def collect(name: str, *, scrape: bool = False, overrides: dict | None = None, store: Store | None = None) -> Snapshot:
+def collect(
+    name: str,
+    *,
+    scrape: bool = False,
+    screener_url: str | None = None,
+    overrides: dict | None = None,
+    store: Store | None = None,
+) -> Snapshot:
     """Merge sources in priority order: live scrapers, own GMP history, seed data, manual file, overrides."""
     store = store or Store()
     snap = Snapshot(name)
@@ -114,6 +121,14 @@ def collect(name: str, *, scrape: bool = False, overrides: dict | None = None, s
                             )
                     except FetchError as e:
                         snap.warnings.append(f"{fetcher.name} history: {e}")
+            if screener_url:
+                try:
+                    data = ScreenerFetcher(http).fetch(name, screener_url)
+                except FetchError as e:
+                    snap.warnings.append(f"{ScreenerFetcher.name}: {e}")
+                else:
+                    for key, value in data.items():
+                        snap.set(key, value, ScreenerFetcher.name)
 
     observations = store.gmp_observations(name)
     if len(observations) >= 2:
@@ -183,11 +198,18 @@ def analyse(snap: Snapshot, models="auto") -> dict:
     return rep
 
 
-def run(name: str, *, scrape: bool = False, overrides: dict | None = None, save: bool = False) -> dict:
+def run(
+    name: str,
+    *,
+    scrape: bool = False,
+    screener_url: str | None = None,
+    overrides: dict | None = None,
+    save: bool = False,
+) -> dict:
     store = Store()
     if save and overrides:
         save_manual(name, overrides)
-    snap = collect(name, scrape=scrape, overrides=overrides, store=store)
+    snap = collect(name, scrape=scrape, screener_url=screener_url, overrides=overrides, store=store)
     rep = analyse(snap)
     rep["gmp_history"] = [
         {"observed_at": timestamp, "gmp": gmp, "source": source}

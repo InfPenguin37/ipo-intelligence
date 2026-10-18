@@ -5,6 +5,7 @@ from streamlit.testing.v1 import AppTest
 
 from conftest import make_history
 from ipo_intel import cli, config, pipeline
+from ipo_intel.fetchers import ChittorgarhFetcher, GmpFetcher, ScreenerFetcher
 from ipo_intel.store import Store
 
 APP = str(Path(__file__).resolve().parents[1] / "src" / "ipo_intel" / "app.py")
@@ -82,6 +83,25 @@ def test_ipowatch_history_feeds_gmp_stats_and_keeps_source(monkeypatch, tmp_path
     assert len(store.gmp_observations("Zetwerk")) == 3
 
 
+def test_screener_url_adds_fundamentals_with_source(monkeypatch, tmp_path):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "1")
+    url = "https://www.screener.in/company/id/1286259/consolidated/"
+    monkeypatch.setattr(GmpFetcher, "fetch", lambda self, name: {})
+    monkeypatch.setattr(GmpFetcher, "fetch_history", lambda self, name: [])
+    monkeypatch.setattr(ChittorgarhFetcher, "fetch", lambda self, name: {})
+    monkeypatch.setattr(ScreenerFetcher, "fetch", lambda self, name, company_url: {"roce_pct": 4.0})
+
+    snapshot = pipeline.collect(
+        "Zetwerk",
+        scrape=True,
+        screener_url=url,
+        store=Store(tmp_path / "screener.db"),
+    )
+
+    assert snapshot.get("roce_pct") == 4.0
+    assert next(row for row in snapshot.provenance() if row["field"] == "roce_pct")["source"] == "screener.in"
+
+
 def test_unknown_ipo_reports_what_is_missing():
     rep = pipeline.run("Totally Unknown Ltd")
     assert set(rep["missing_short_term"]) == {"issue_size_cr", "price_band_high", "gmp_final"}
@@ -108,7 +128,11 @@ def test_cli_fetches_live_data_by_default(monkeypatch, capsys):
     assert calls[-1]["scrape"] is True
     assert cli.main(["run", "Example IPO", "--no-scrape"]) == 0
     assert calls[-1]["scrape"] is False
-    assert capsys.readouterr().out.count("analysis") == 2
+    url = "https://www.screener.in/company/id/1286259/consolidated/"
+    assert cli.main(["run", "Example IPO", "--screener-url", url]) == 0
+    assert calls[-1]["screener_url"] == url
+    assert cli.main(["run", "Example IPO", "--no-scrape", "--screener-url", url]) == 2
+    assert capsys.readouterr().out.count("analysis") == 3
 
 
 def test_scraper_failures_become_warnings_not_crashes(monkeypatch):

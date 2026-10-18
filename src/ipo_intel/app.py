@@ -109,11 +109,16 @@ with st.sidebar:
 
     with st.form("analysis_form"):
         name = st.text_input("IPO name", value="Jio Platforms")
+        screener_url = st.text_input(
+            "Screener company URL (optional)",
+            placeholder="https://www.screener.in/company/...",
+            help="Paste a direct company page URL. Automated Screener search is not supported.",
+        )
         live = st.checkbox(
             "Fetch live data",
             value=True,
             disabled=not scrapers_enabled(),
-            help="Fetch current GMP and subscription data. Disable this to use saved and seed data only.",
+            help="Fetch live GMP and subscription data, plus fundamentals from the supplied Screener page.",
         )
         submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
 
@@ -146,7 +151,12 @@ if submitted:
         st.stop()
 
     with st.spinner("Collecting data and scoring..."):
-        rep = pipeline.run(name.strip(), scrape=live and scrapers_enabled(), overrides=overrides)
+        rep = pipeline.run(
+            name.strip(),
+            scrape=live and scrapers_enabled(),
+            screener_url=screener_url.strip() or None,
+            overrides=overrides,
+        )
 
     for warning in rep["warnings"]:
         st.warning(warning)
