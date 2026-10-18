@@ -53,6 +53,35 @@ def test_own_gmp_history_feeds_open_peak_final():
     assert (snap.get("gmp_open"), snap.get("gmp_peak"), snap.get("gmp_final")) == (150, 240, 200)
 
 
+def test_ipowatch_history_feeds_gmp_stats_and_keeps_source(monkeypatch, tmp_path):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "1")
+    from ipo_intel.fetchers import ChittorgarhFetcher, GmpFetcher
+
+    monkeypatch.setattr(GmpFetcher, "fetch", lambda self, name: {"gmp_current": 18.0})
+    monkeypatch.setattr(
+        GmpFetcher,
+        "fetch_history",
+        lambda self, name: [("2026-10-16", 11.0), ("2026-10-17", 5.0)],
+    )
+    monkeypatch.setattr(ChittorgarhFetcher, "fetch", lambda self, name: {})
+    store = Store(tmp_path / "history.db")
+
+    snapshot = pipeline.collect("Zetwerk", scrape=True, store=store)
+    observations = store.gmp_observations("Zetwerk")
+    sources = {row["field"]: row["source"] for row in snapshot.provenance()}
+
+    assert [value for _, value, _ in observations] == [11.0, 5.0, 18.0]
+    assert (snapshot.get("gmp_open"), snapshot.get("gmp_peak"), snapshot.get("gmp_final")) == (
+        11.0,
+        18.0,
+        18.0,
+    )
+    assert sources["gmp_open"] == "ipowatch-history"
+    assert sources["gmp_final"] == "gmp-table"
+    store.record_gmp("Zetwerk", 11.0, "ipowatch-history", "2026-10-16T00:00:00")
+    assert len(store.gmp_observations("Zetwerk")) == 3
+
+
 def test_unknown_ipo_reports_what_is_missing():
     rep = pipeline.run("Totally Unknown Ltd")
     assert set(rep["missing_short_term"]) == {"issue_size_cr", "price_band_high", "gmp_final"}
@@ -98,7 +127,14 @@ def test_cli_import_and_train(tmp_path, capsys):
     assert rep["ml"]["tier"] == "large"
 
 
-def test_web_app_runs_end_to_end():
+def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
+    def app_store():
+        store = Store(tmp_path / "app-history.db")
+        store.record_gmp("Jio Platforms", 150, "ipowatch-history", "2026-10-16T00:00:00")
+        store.record_gmp("Jio Platforms", 175, "ipowatch-history", "2026-10-17T00:00:00")
+        return store
+
+    monkeypatch.setattr(pipeline, "Store", app_store)
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
     at.text_area[0].input("sub_retail=2.4").run()
@@ -107,6 +143,7 @@ def test_web_app_runs_end_to_end():
     assert "Short term" in [s.value for s in at.subheader]
     assert any("Score" in m.label for m in at.metric)
     assert "#### Reported subscription" in [s.value for s in at.markdown]
+    assert "#### GMP history" in [s.value for s in at.markdown]
     assert any(
         "Source" in str(dataframe.proto) and "Snapshot time (UTC)" in str(dataframe.proto)
         for dataframe in at.dataframe

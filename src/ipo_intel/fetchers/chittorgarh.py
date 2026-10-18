@@ -7,8 +7,10 @@ from __future__ import annotations
 import difflib
 import re
 from datetime import date
+from urllib.parse import urljoin, urlparse
 
 import pandas as pd
+from bs4 import BeautifulSoup
 
 from .. import config
 from . import tables as T
@@ -35,6 +37,18 @@ def best_link(name: str, links: list[tuple[str, str]]) -> str | None:
     texts = {T.norm(t): h for t, h in links}
     close = difflib.get_close_matches(T.norm(name), list(texts), n=1, cutoff=0.6)
     return texts[close[0]] if close else None
+
+
+def find_subscription_url(html: str, ipo_name: str) -> str | None:
+    for link in BeautifulSoup(html, "html.parser").find_all("a", href=True):
+        href = link["href"]
+        path = urlparse(href).path.strip("/").split("/")
+        if len(path) < 2 or path[0] != "ipo_subscription":
+            continue
+        slug = path[1].replace("-", " ")
+        if T.name_matches(ipo_name, slug):
+            return urljoin("https://www.chittorgarh.com", href)
+    return None
 
 
 def parse_details(tables: list[pd.DataFrame]) -> dict:
@@ -68,6 +82,12 @@ def parse_subscription(tables: list[pd.DataFrame]) -> dict:
     """Category subscription (times). Uses the last numeric cell in each category row."""
     for df in tables:
         if df.shape[1] < 2:
+            continue
+        headers = [T.norm(column) for column in df.columns]
+        if not any(
+            "subscription" in header and ("time" in header or "times" in header)
+            for header in headers
+        ):
             continue
         labels = [T.norm(x) for x in df.iloc[:, 0]]
         if not any(re.search(r"qib|qualified", lab) for lab in labels):
@@ -172,8 +192,12 @@ class ChittorgarhFetcher(Fetcher):
         return self.http.get(href)
 
     def fetch(self, ipo_name: str) -> dict:
-        tables = T.read_tables(self._page(ipo_name))
-        out = {**parse_details(tables), **parse_subscription(tables)}
+        html = self._page(ipo_name)
+        tables = T.read_tables(html)
+        out = parse_details(tables)
+        subscription_url = find_subscription_url(html, ipo_name)
+        subscription_tables = T.read_tables(self.http.get(subscription_url)) if subscription_url else tables
+        out.update(parse_subscription(subscription_tables))
         if not out:
             raise FetchError("page fetched but no known fields could be parsed; try `ipo probe`")
         return out

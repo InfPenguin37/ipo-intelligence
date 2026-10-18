@@ -103,13 +103,29 @@ def collect(name: str, *, scrape: bool = False, overrides: dict | None = None, s
                     store.record_gmp(name, data.pop("gmp_current"), fetcher.name)
                 for k, v in data.items():
                     snap.set(k, v, fetcher.name)
+                if isinstance(fetcher, GmpFetcher):
+                    try:
+                        for observed_at, gmp in fetcher.fetch_history(name):
+                            store.record_gmp(
+                                name,
+                                gmp,
+                                "ipowatch-history",
+                                ts=observed_at,
+                            )
+                    except FetchError as e:
+                        snap.warnings.append(f"{fetcher.name} history: {e}")
 
-    series = store.gmp_series(name)
-    if len(series) >= 2:
-        for k, v in store.gmp_stats(name).items():
-            snap.set(k, v, "GMP history recorded by this app")
-    elif len(series) == 1:
-        snap.set("gmp_final", series[0][1], "GMP history recorded by this app")
+    observations = store.gmp_observations(name)
+    if len(observations) >= 2:
+        peak = max(observations, key=lambda point: point[1])
+        for key, point in (
+            ("gmp_open", observations[0]),
+            ("gmp_peak", peak),
+            ("gmp_final", observations[-1]),
+        ):
+            snap.set(key, point[1], point[2])
+    elif len(observations) == 1:
+        snap.set("gmp_final", observations[0][1], observations[0][2])
 
     seed = find_seed(name)
     if seed:
@@ -173,5 +189,9 @@ def run(name: str, *, scrape: bool = False, overrides: dict | None = None, save:
         save_manual(name, overrides)
     snap = collect(name, scrape=scrape, overrides=overrides, store=store)
     rep = analyse(snap)
+    rep["gmp_history"] = [
+        {"observed_at": timestamp, "gmp": gmp, "source": source}
+        for timestamp, gmp, source in store.gmp_observations(name)
+    ]
     store.save_snapshot(name, rep)
     return rep

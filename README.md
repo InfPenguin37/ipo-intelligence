@@ -53,6 +53,9 @@ ipo run jio --scrape
 * The GMP and IPO-detail scrapers may need tuning as those sites change. Parser tests use synthetic HTML and JSON.
   If a field comes back empty, `ipo probe <url>` shows what the page exposes; adjust the URL via the documented
   environment variables or update the parser.
+* With live fetching enabled, the app reads current GMP from IPOWatch and its linked day-wise GMP page, then
+  reads current category subscription ratios from Chittorgarh's dedicated subscription page. The dashboard
+  shows reported subscription as a changing snapshot and charts the dated GMP observations with their source.
 * A failed fetcher only produces a warning; the app falls back to seed data, your saved overrides, and the GMP
   history it recorded itself. Official NSE/BSE subscription pages are not scraped; read them and use `--set`.
 

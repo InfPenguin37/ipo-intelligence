@@ -14,7 +14,7 @@ from ipo_intel.fetchers.chittorgarh import (
     parse_perf_tracker_data,
     parse_subscription,
 )
-from ipo_intel.fetchers.gmp import parse_gmp
+from ipo_intel.fetchers.gmp import find_gmp_history_url, parse_gmp, parse_gmp_history
 from ipo_intel.history_import import (
     map_investorgain_csv,
     map_kaggle_workbook,
@@ -64,10 +64,89 @@ def test_subscription_picks_main_nii_row_not_bnii():
     assert out == {"sub_qib": 12.68, "sub_nii": 6.55, "sub_retail": 1.39, "sub_overall": 5.71}
 
 
+def test_subscription_ignores_share_allocation_tables():
+    allocations = """<table>
+    <tr><th>Category</th><th>Shares Offered</th><th>Amt (₹ Cr.)</th><th>Size (%)</th></tr>
+    <tr><td>QIB</td><td>248480366</td><td>3752.05</td><td>74.84%</td></tr>
+    <tr><td>Retail</td><td>33130716</td><td>500.27</td><td>9.98%</td></tr>
+    </table>"""
+    assert parse_subscription(T.read_tables(allocations)) == {}
+
+
+def test_chittorgarh_fetches_subscription_from_dedicated_ipo_page():
+    profile = """
+    <a href="/ipo/zetwerk-ipo/3091/">Zetwerk IPO</a>
+    <a href="/ipo_subscription/zetwerk-ipo/3091/">Subscription</a>
+    <table>
+      <tr><td>Price Band</td><td>₹145 to ₹151 per share</td></tr>
+      <tr><td>Total Issue Size</td><td>₹5,012 Cr</td></tr>
+    </table>
+    """
+    subscription = """<table>
+    <thead><tr><th>Investor Category</th><th>Subscription (times)</th></tr></thead>
+    <tbody>
+      <tr><td>Qualified Institutional</td><td>0.37x</td></tr>
+      <tr><td>Non Institutional</td><td>0.17x</td></tr>
+      <tr><td>Retail Individual</td><td>0.37x</td></tr>
+      <tr><td>Total Subscription</td><td>0.31x</td></tr>
+    </tbody></table>"""
+
+    class FakeHttp:
+        def __init__(self):
+            self.urls = []
+
+        def get(self, url):
+            self.urls.append(url)
+            if url.endswith("/ipo-in-india-list-main-board-sme/82/"):
+                return '<a href="/ipo/zetwerk-ipo/3091/">Zetwerk IPO</a>'
+            if url.endswith("/ipo/zetwerk-ipo/3091/"):
+                return profile
+            if url.endswith("/ipo_subscription/zetwerk-ipo/3091/"):
+                return subscription
+            raise AssertionError(f"unexpected URL: {url}")
+
+    http = FakeHttp()
+    result = ChittorgarhFetcher(http).fetch("Zetwerk")
+
+    assert result["sub_overall"] == 0.31
+    assert result["sub_qib"] == 0.37
+    assert result["sub_nii"] == 0.17
+    assert result["sub_retail"] == 0.37
+    assert http.urls[-1] == "https://www.chittorgarh.com/ipo_subscription/zetwerk-ipo/3091/"
+
+
 def test_gmp_row_matching_ignores_status_suffix():
     out = parse_gmp(T.read_tables(GMP), "Jio Platforms")
     assert out == {"gmp_current": 220.0, "price_band_high": 1119.0}
     assert parse_gmp(T.read_tables(GMP), "Nonexistent Corp") == {}
+
+
+def test_find_gmp_history_page_and_parse_daywise_history():
+    current_page = """
+    <a href="/zetwerk-ipo-gmp-grey-market-premium/">Zetwerk</a>
+    <a href="/other-ipo-gmp-grey-market-premium/">Other Company</a>
+    """
+    assert find_gmp_history_url(current_page, "Zetwerk") == (
+        "https://ipowatch.in/zetwerk-ipo-gmp-grey-market-premium/"
+    )
+    assert find_gmp_history_url(current_page, "Unknown IPO") is None
+
+    history_tables = [
+        pd.DataFrame(
+            [
+                ["Date", "IPO GMP", "GMP Trend", "Gain", "Last Updated"],
+                ["17 October", "₹5", "down", "3.31%", "17:00"],
+                ["16 October", "₹11", "down", "7.28%", "17:14"],
+                ["10 October", "₹-", "-", "-", "17:39"],
+            ]
+        ),
+        pd.DataFrame([["IPO Open Date", "October 15, 2026"]]),
+    ]
+
+    assert parse_gmp_history(history_tables) == [
+        ("2026-10-16T11:44:00+00:00", 11.0),
+        ("2026-10-17T11:30:00+00:00", 5.0),
+    ]
 
 
 def test_perf_tracker():

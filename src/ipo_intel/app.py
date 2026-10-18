@@ -234,6 +234,29 @@ if submitted:
             st.markdown("#### Current market data used")
             st.dataframe(pd.DataFrame(market_rows), hide_index=True, use_container_width=True)
 
+        gmp_history = rep.get("gmp_history", [])
+        if gmp_history:
+            st.markdown("#### GMP history")
+            history_frame = pd.DataFrame(gmp_history).rename(
+                columns={
+                    "observed_at": "Observed at (UTC)",
+                    "gmp": "GMP",
+                    "source": "Source",
+                }
+            )
+            history_frame["Observed at (UTC)"] = pd.to_datetime(
+                history_frame["Observed at (UTC)"], utc=True
+            )
+            st.line_chart(
+                history_frame.set_index("Observed at (UTC)")["GMP"],
+                y_label="GMP (₹ per share)",
+            )
+            history_frame["Observed at (UTC)"] = history_frame["Observed at (UTC)"].dt.strftime(
+                "%d %b %Y, %H:%M"
+            )
+            history_frame["GMP"] = history_frame["GMP"].map(lambda value: f"₹{value:,.2f}")
+            st.dataframe(history_frame, hide_index=True, use_container_width=True)
+
         if rep.get("scenarios"):
             st.markdown("#### Listing scenarios")
             scenario_rows = [
