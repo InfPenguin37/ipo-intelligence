@@ -12,6 +12,7 @@ from ipo_intel.fetchers.chittorgarh import (
     best_link,
     find_ipo_links,
     parse_active_ipo_names,
+    parse_active_ipo_schedule,
     parse_financials,
     parse_issue_objects,
     parse_valuation,
@@ -108,6 +109,40 @@ def test_fetch_active_ipo_names_uses_mainboard_page_and_reports_layout_changes()
 
     with pytest.raises(FetchError, match="no active or upcoming mainboard IPO names"):
         ChittorgarhFetcher(EmptyHttp()).fetch_active_ipo_names()
+
+
+def test_parse_active_ipo_schedule_extracts_dates_and_matches_names_without_ltd():
+    payload = {
+        "reportTableData": [
+            {
+                "~IPO": "Jio Platforms IPO",
+                "~Issue_Open_Date": "2026-10-21T00:00:00.000Z",
+                "~IssueCloseDate": "2026-10-23T00:00:00.000Z",
+                "~ListingDate": "2026-10-28T00:00:00.000Z",
+            },
+            {
+                "~IPO": "Paras Healthcare IPO",
+                "Opening Date": "21-Oct-2026",
+                "Closing Date": "23-Oct-2026",
+                "Listing Date": "",
+            },
+        ]
+    }
+
+    assert parse_active_ipo_schedule(payload, ["Jio Platforms", "Paras Healthcare"]) == [
+        {
+            "name": "Jio Platforms",
+            "opening_date": "2026-10-21",
+            "closing_date": "2026-10-23",
+            "listing_date": "2026-10-28",
+        },
+        {
+            "name": "Paras Healthcare",
+            "opening_date": "2026-10-21",
+            "closing_date": "2026-10-23",
+            "listing_date": None,
+        },
+    ]
 
 
 def test_details_fresh_issue():

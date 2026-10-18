@@ -29,6 +29,11 @@ URLS = {
         "IPO_LIST_URL",
         "https://www.chittorgarh.com/report/ipo-in-india-list-main-board-sme/82/mainboard/",
     ),
+    "ipo_schedule": os.environ.get(
+        "IPO_SCHEDULE_URL",
+        "https://webnodejs.chittorgarh.com/cloud/report/data-read/82/1/10/"
+        "{year}/{financial_year}/0/mainboard/0?search=",
+    ),
     "perf_tracker": os.environ.get(
         "IPO_PERF_URL",
         "https://webnodejs.chittorgarh.com/cloud/report/data-read/236/1/10/"

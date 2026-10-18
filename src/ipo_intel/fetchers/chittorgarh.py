@@ -53,6 +53,40 @@ def parse_active_ipo_names(html: str) -> list[str]:
     return names
 
 
+def _schedule_date(value: object) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    parsed = pd.to_datetime(value, errors="coerce", utc=True)
+    return parsed.date().isoformat() if pd.notna(parsed) else None
+
+
+def parse_active_ipo_schedule(payload: dict, names: list[str]) -> list[dict[str, str | None]]:
+    rows = payload.get("reportTableData") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return [{"name": name, "opening_date": None, "closing_date": None, "listing_date": None} for name in names]
+
+    schedules: list[dict[str, str | None]] = []
+    for name in names:
+        row = next(
+            (
+                item
+                for item in rows
+                if isinstance(item, dict)
+                and T.name_matches(name, str(item.get("~IPO") or item.get("Company") or ""))
+            ),
+            {},
+        )
+        schedules.append(
+            {
+                "name": name,
+                "opening_date": _schedule_date(row.get("~Issue_Open_Date") or row.get("Opening Date")),
+                "closing_date": _schedule_date(row.get("~IssueCloseDate") or row.get("Closing Date")),
+                "listing_date": _schedule_date(row.get("~ListingDate") or row.get("Listing Date")),
+            }
+        )
+    return schedules
+
+
 def best_link(name: str, links: list[tuple[str, str]]) -> str | None:
     for text, href in links:
         if T.name_matches(name, text):
@@ -396,6 +430,15 @@ class ChittorgarhFetcher(Fetcher):
                 f"{config.URLS['ipo_list']}; the page layout may have changed"
             )
         return names
+
+    def fetch_active_ipo_schedule(self) -> list[dict[str, str | None]]:
+        names = self.fetch_active_ipo_names()
+        today = date.today()
+        year = today.year
+        financial_year = f"{year}-{(year + 1) % 100:02d}"
+        url = config.URLS["ipo_schedule"].format(year=year, financial_year=financial_year)
+        payload = self.http.get(url, as_json=True)
+        return parse_active_ipo_schedule(payload, names)
 
     def _page(self, ipo_name: str) -> str:
         html = self.http.get(config.URLS["ipo_list"])

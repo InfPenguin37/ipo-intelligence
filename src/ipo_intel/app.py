@@ -68,8 +68,36 @@ def _live_fetch_enabled() -> bool:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _active_ipo_names() -> tuple[str, ...]:
-    return tuple(ChittorgarhFetcher().fetch_active_ipo_names())
+def _active_ipo_schedules() -> tuple[tuple[str, str | None, str | None, str | None], ...]:
+    schedules = ChittorgarhFetcher().fetch_active_ipo_schedule()
+    return tuple(
+        (
+            item["name"],
+            item["opening_date"],
+            item["closing_date"],
+            item["listing_date"],
+        )
+        for item in schedules
+    )
+
+
+def _ipo_option_label(name: str, schedule: tuple[str | None, str | None, str | None]) -> str:
+    labels = ("Opens", "Closes", "Lists")
+    dates = [
+        f"{label} {pd.Timestamp(value).strftime('%d %b %Y')}"
+        for label, value in zip(labels, schedule, strict=True)
+        if value
+    ]
+    return f"{name} · {' · '.join(dates)}" if dates else name
+
+
+def _format_ipo_option(
+    selected: str | None,
+    schedules: dict[str, tuple[str | None, str | None, str | None]],
+) -> str:
+    if selected is None:
+        return ""
+    return _ipo_option_label(selected, schedules[selected])
 
 
 st.markdown(
@@ -167,11 +195,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-ipo_names: tuple[str, ...] = ()
+ipo_schedules: tuple[tuple[str, str | None, str | None, str | None], ...] = ()
 suggestion_error: str | None = None
 if live_fetch_enabled:
     try:
-        ipo_names = _active_ipo_names()
+        ipo_schedules = _active_ipo_schedules()
     except FetchError as error:
         suggestion_error = str(error)
 
@@ -181,14 +209,21 @@ elif not live_fetch_enabled:
     st.info("IPO suggestions require live scraping, which is disabled; enter a name manually.")
 
 with st.form("analysis_form"):
-    if ipo_names:
+    if ipo_schedules:
+        ipo_names = tuple(schedule[0] for schedule in ipo_schedules)
+        schedule_by_name = {
+            name: (opening, closing, listing)
+            for name, opening, closing, listing in ipo_schedules
+        }
         name = st.selectbox(
             "IPO name",
             options=ipo_names,
             index=None,
             placeholder="Search active and upcoming mainboard IPOs",
+            format_func=lambda selected: _format_ipo_option(selected, schedule_by_name),
         )
     else:
+        ipo_names = ()
         name = st.text_input("IPO name", placeholder="Enter an IPO name")
     live = st.checkbox(
         "Fetch live data",
@@ -202,7 +237,11 @@ with st.form("analysis_form"):
 
 if submitted:
     if not name or not name.strip():
-        st.error("Select an IPO name to run an analysis." if ipo_names else "Enter an IPO name to run an analysis.")
+        st.error(
+            "Select an IPO name to run an analysis."
+            if ipo_schedules
+            else "Enter an IPO name to run an analysis."
+        )
         st.stop()
     try:
         overrides = pipeline.parse_overrides(overrides_text.splitlines())
