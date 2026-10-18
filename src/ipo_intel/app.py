@@ -16,76 +16,54 @@ st.set_page_config(page_title="IPO Intelligence", page_icon="📈", layout="wide
 st.markdown(
     """
     <style>
-    :root {
-        --ink: #182b43;
-        --muted: #697b90;
-        --line: #e1e8f0;
-        --teal: #087f8c;
-        --paper: #f5f8fb;
-    }
-    .stApp { background: var(--paper); color: var(--ink); }
     [data-testid="stHeader"] { background: transparent; }
     [data-testid="stMainBlockContainer"] { max-width: 1440px; padding-top: 2.25rem; }
-    [data-testid="stSidebar"] {
-        background: #edf3f7;
-        border-right: 1px solid var(--line);
-    }
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color: var(--muted); }
-    h1, h2, h3 { color: var(--ink); letter-spacing: -0.025em; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { opacity: .76; }
+    h1, h2, h3 { letter-spacing: -0.025em; }
     h1 { font-size: 2.15rem !important; }
     h2 { font-size: 1.35rem !important; margin-bottom: .35rem !important; }
     [data-testid="stMetric"] {
-        background: #fff;
-        border: 1px solid var(--line);
+        border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
         border-radius: 14px;
         padding: 1rem 1.05rem;
-        box-shadow: 0 2px 8px rgba(24, 43, 67, .035);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
     }
-    [data-testid="stMetricLabel"] p { color: var(--muted); font-size: .82rem; }
-    [data-testid="stMetricValue"] { color: var(--ink); font-weight: 650; }
+    [data-testid="stMetricLabel"] p { opacity: .76; font-size: .82rem; }
+    [data-testid="stMetricValue"] { font-weight: 650; }
     [data-testid="stVerticalBlockBorderWrapper"] {
-        background: #fff;
-        border-color: var(--line) !important;
+        border-color: color-mix(in srgb, currentColor 16%, transparent) !important;
         border-radius: 16px;
     }
     .stButton > button[kind="primary"], [data-testid="stFormSubmitButton"] button {
-        background: var(--teal);
-        border: 1px solid var(--teal);
         border-radius: 10px;
-        color: white;
         font-weight: 650;
         min-height: 2.75rem;
     }
-    .stButton > button[kind="primary"]:hover, [data-testid="stFormSubmitButton"] button:hover {
-        background: #066b76;
-        border-color: #066b76;
-        color: white;
-    }
+    [data-testid="stFormSubmitButton"] button p { color: inherit; }
     [data-testid="stDataFrame"], [data-testid="stAlert"] { border-radius: 12px; }
     .eyebrow {
-        color: var(--teal);
+        opacity: .76;
         font-size: .72rem;
         font-weight: 750;
         letter-spacing: .14em;
         text-transform: uppercase;
         margin-bottom: .35rem;
     }
-    .lede { color: var(--muted); font-size: 1rem; margin-top: -.45rem; }
-    .section-note { color: var(--muted); font-size: .88rem; margin: -.1rem 0 1rem; }
+    .lede { opacity: .76; font-size: 1rem; margin-top: -.45rem; }
+    .section-note { opacity: .76; font-size: .88rem; margin: -.1rem 0 1rem; }
     .verdict {
-        color: var(--teal);
         font-size: .78rem;
         font-weight: 750;
         letter-spacing: .08em;
         text-transform: uppercase;
         margin: 0;
+        opacity: .82;
     }
     .status {
         display: inline-block;
-        background: #e6f4f3;
-        border: 1px solid #c7e8e5;
+        background: color-mix(in srgb, currentColor 8%, transparent);
+        border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
         border-radius: 999px;
-        color: #086a71;
         font-size: .78rem;
         font-weight: 650;
         padding: .3rem .65rem;
