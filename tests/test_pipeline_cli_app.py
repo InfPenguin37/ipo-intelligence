@@ -186,6 +186,13 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
     at.button[0].click().run()
     assert not at.exception
     assert "Short term" in [s.value for s in at.subheader]
+    metric_labels = {metric.label for metric in at.metric}
+    assert "Estimated listing gain" in metric_labels
+    assert "Model uncertainty range" in metric_labels
+    assert any(
+        "Short-term signal" in item.value and "verdict-badge" in item.value
+        for item in at.markdown
+    )
     assert any("Score" in m.label for m in at.metric)
     assert "#### Reported subscription" in [s.value for s in at.markdown]
     assert "#### GMP history" in [s.value for s in at.markdown]

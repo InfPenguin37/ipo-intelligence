@@ -42,6 +42,18 @@ def _format_market_value(field: str, value: object) -> str:
     return str(value)
 
 
+def _short_verdict_class(verdict: str) -> str:
+    if verdict.startswith("STRONG APPLY"):
+        return "verdict-strong"
+    if verdict == "APPLY":
+        return "verdict-apply"
+    if verdict.startswith("NEUTRAL"):
+        return "verdict-neutral"
+    if verdict == "AVOID":
+        return "verdict-avoid"
+    return "verdict-unknown"
+
+
 st.markdown(
     """
     <style>
@@ -88,6 +100,20 @@ st.markdown(
         margin: 0;
         opacity: .82;
     }
+    .verdict-badge {
+        display: inline-block;
+        border: 1px solid currentColor;
+        border-radius: 999px;
+        padding: .4rem .8rem;
+        font-size: 1.02rem;
+        font-weight: 750;
+        line-height: 1.25;
+    }
+    .verdict-strong { border-color: #16803c; background: color-mix(in srgb, #16803c 14%, transparent); }
+    .verdict-apply { border-color: #25834a; background: color-mix(in srgb, #25834a 10%, transparent); }
+    .verdict-neutral { border-color: #d99a19; background: color-mix(in srgb, #d99a19 14%, transparent); }
+    .verdict-avoid { border-color: #c23838; background: color-mix(in srgb, #c23838 12%, transparent); }
+    .verdict-unknown { color: inherit; background: color-mix(in srgb, currentColor 8%, transparent); }
     .status {
         display: inline-block;
         background: color-mix(in srgb, currentColor 8%, transparent);
@@ -186,22 +212,33 @@ if submitted:
         )
     else:
         with st.container(border=True):
-            headline, range_col, verdict_col = st.columns([1.2, 1, 1])
+            headline, range_col = st.columns([1, 1])
             with headline:
-                st.metric("Model / headline estimate", f"{rep['headline_gain']:+.1f}%")
+                st.metric("Estimated listing gain", f"{rep['headline_gain']:+.1f}%")
                 st.caption(rep["basis"])
             with range_col:
                 if rep.get("ml"):
                     model = rep["ml"]
-                    st.metric("Model range · 80%", f"{model['q10']:+.1f}% to {model['q90']:+.1f}%")
-                    st.caption(f"{model['n_train']} IPOs in the {model['tier']} tier")
+                    st.metric(
+                        "Model uncertainty range",
+                        f"{model['q10']:+.1f}% to {model['q90']:+.1f}%",
+                    )
+                    st.caption(
+                        f"Central 80% prediction range (10th–90th percentile); "
+                        f"{model['n_train']} historical IPOs in the {model['tier']} tier."
+                    )
                 else:
-                    st.metric("Rule-based estimate", f"{rep['heuristic_gain']:+.1f}%")
-                    st.caption("Model estimate unavailable; using the research heuristic.")
-            with verdict_col:
-                st.markdown('<p class="verdict">Signal</p>', unsafe_allow_html=True)
-                st.subheader(rep["short_verdict"])
-                st.caption("Research indicator, not a recommendation.")
+                    st.metric("Model uncertainty range", "Not available")
+                    st.caption("A trained model is unavailable; the estimate uses the research heuristic.")
+
+            verdict = escape(rep["short_verdict"])
+            verdict_class = _short_verdict_class(rep["short_verdict"])
+            st.markdown(
+                f'<div class="verdict {verdict_class}">Short-term signal</div>'
+                f'<div style="margin-top:.35rem"><span class="verdict-badge {verdict_class}">{verdict}</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("Research indicator based on estimated listing-day gain; not an investment recommendation.")
 
             st.divider()
             raw_gmp, heuristic = st.columns(2)

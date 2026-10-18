@@ -177,7 +177,9 @@ def analyse(snap: Snapshot, models="auto") -> dict:
         use_ml = bool(ml) and (ml["tier"] == "small" or ml["n_train"] >= 5)
         rep["headline_gain"] = ml["q50"] if use_ml else rep["heuristic_gain"]
         rep["basis"] = (
-            f"ML model ({ml['tier']} tier, trained on {ml['n_train']} IPOs)" if use_ml else "rule-based heuristic"
+            f"Median estimate from the {ml['tier']}-issue ML model, trained on {ml['n_train']} historical IPOs"
+            if use_ml
+            else "Rule-based estimate using issue size, GMP movement, and retail demand"
         )
         rep["short_verdict"] = short_verdict(rep["headline_gain"])
         if not rep["subscription_known"]:
