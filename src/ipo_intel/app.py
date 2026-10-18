@@ -111,14 +111,14 @@ with st.sidebar:
         name = st.text_input("IPO name", value="Jio Platforms")
         live = st.checkbox(
             "Fetch live data",
-            value=False,
+            value=True,
             disabled=not scrapers_enabled(),
-            help="Fetch current GMP and subscription data. Requires IPO_ENABLE_SCRAPERS=1.",
+            help="Fetch current GMP and subscription data. Disable this to use saved and seed data only.",
         )
         submitted = st.form_submit_button("Run analysis", type="primary", use_container_width=True)
 
     if not scrapers_enabled():
-        st.caption("Live fetching is off. Set `IPO_ENABLE_SCRAPERS=1` before starting the app to enable it.")
+        st.caption("Live fetching is disabled by `IPO_ENABLE_SCRAPERS=0`.")
 
     with st.expander("Manual overrides", expanded=False):
         overrides_text = st.text_area(

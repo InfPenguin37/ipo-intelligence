@@ -90,7 +90,7 @@ def collect(name: str, *, scrape: bool = False, overrides: dict | None = None, s
 
     if scrape:
         if not config.scrapers_enabled():
-            snap.warnings.append("Live fetch requested but IPO_ENABLE_SCRAPERS is not set to 1; skipped.")
+            snap.warnings.append("Live fetch requested but disabled by IPO_ENABLE_SCRAPERS=0; skipped.")
         else:
             http = PoliteSession()
             for fetcher in (GmpFetcher(http), ChittorgarhFetcher(http)):

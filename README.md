@@ -38,13 +38,16 @@ Fields you can set: see the list in the web UI's "Manual overrides" box (`gmp_fi
    `ipo run jio --set sub_retail=<x> --set sub_nii=<x> --set sub_qib=<x> --set sub_overall=<x> --save`
 3. Read the verdict. Without subscription numbers it shows bear/base/bull scenarios instead of a single number.
 
-## Live fetchers (optional, off by default)
+## Live fetchers (on by default)
 
 ```bash
-export IPO_ENABLE_SCRAPERS=1
 ipo probe https://ipowatch.in/ipo-grey-market-premium-latest-ipo-gmp/   # see what tables the page exposes
-ipo run jio --scrape
+ipo run jio
 ```
+
+The app and `ipo run` fetch current public GMP and subscription data by default. Uncheck **Fetch live data** in
+the app or use `ipo run jio --no-scrape` to skip fetching for one analysis. To disable live fetching entirely,
+set `IPO_ENABLE_SCRAPERS=0` before starting the app or CLI.
 
 * The fetchers read public web pages. They honour `robots.txt`, wait between requests and cache raw responses
   in `data/raw/`. Check each site's terms of use before relying on them. Don't lower `IPO_REQUEST_DELAY_S`.
@@ -62,7 +65,6 @@ ipo run jio --scrape
 ## Building the training data and ML models
 
 ```bash
-export IPO_ENABLE_SCRAPERS=1
 ipo collect-history            # all available calendar years since 2004 -> data/ipo.db
 ipo collect-history --from-year 2015  # only 2015 through the current year
 ipo collect-history --limit 20        # optional cap for a small test run

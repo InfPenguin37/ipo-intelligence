@@ -4,7 +4,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from conftest import make_history
-from ipo_intel import cli, pipeline
+from ipo_intel import cli, config, pipeline
 from ipo_intel.store import Store
 
 APP = str(Path(__file__).resolve().parents[1] / "src" / "ipo_intel" / "app.py")
@@ -89,9 +89,26 @@ def test_unknown_ipo_reports_what_is_missing():
 
 
 def test_scrape_flag_is_refused_when_not_enabled(monkeypatch):
-    monkeypatch.delenv("IPO_ENABLE_SCRAPERS", raising=False)
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "0")
     rep = pipeline.run("Jio Platforms", scrape=True)
-    assert any("IPO_ENABLE_SCRAPERS" in w for w in rep["warnings"])
+    assert any("IPO_ENABLE_SCRAPERS=0" in w for w in rep["warnings"])
+
+
+def test_scrapers_are_enabled_by_default(monkeypatch):
+    monkeypatch.delenv("IPO_ENABLE_SCRAPERS", raising=False)
+    assert config.scrapers_enabled()
+
+
+def test_cli_fetches_live_data_by_default(monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(cli.pipeline, "run", lambda name, **kwargs: calls.append(kwargs) or {})
+    monkeypatch.setattr(cli.report, "to_text", lambda rep: "analysis")
+
+    assert cli.main(["run", "Example IPO"]) == 0
+    assert calls[-1]["scrape"] is True
+    assert cli.main(["run", "Example IPO", "--no-scrape"]) == 0
+    assert calls[-1]["scrape"] is False
+    assert capsys.readouterr().out.count("analysis") == 2
 
 
 def test_scraper_failures_become_warnings_not_crashes(monkeypatch):
@@ -108,13 +125,14 @@ def test_scraper_failures_become_warnings_not_crashes(monkeypatch):
     assert rep["long_term"]["score"] == 64.0  # seed data still works
 
 
-def test_cli_run_backtest_and_errors(capsys):
-    assert cli.main(["run", "jio"]) == 0
+def test_cli_run_backtest_and_errors(monkeypatch, capsys):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "0")
+    assert cli.main(["run", "jio", "--no-scrape"]) == 0
     out = capsys.readouterr().out
     assert "SHORT TERM" in out and "LONG TERM" in out and "not investment advice" in out
     assert cli.main(["backtest"]) == 0
     assert cli.main(["run", "jio", "--set", "bogus=1"]) == 2
-    assert cli.main(["collect-history"]) == 2  # scrapers disabled
+    assert cli.main(["collect-history"]) == 2  # explicitly disabled for this test
 
 
 def test_cli_import_and_train(tmp_path, capsys):
@@ -128,6 +146,8 @@ def test_cli_import_and_train(tmp_path, capsys):
 
 
 def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
+    monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "0")
+
     def app_store():
         store = Store(tmp_path / "app-history.db")
         store.record_gmp("Jio Platforms", 150, "ipowatch-history", "2026-10-16T00:00:00")
@@ -137,6 +157,7 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "Store", app_store)
     at = AppTest.from_file(APP, default_timeout=60).run()
     assert not at.exception
+    assert at.checkbox[0].value is True
     at.text_area[0].input("sub_retail=2.4").run()
     at.button[0].click().run()
     assert not at.exception

@@ -36,7 +36,7 @@ URLS = {
 
 
 def scrapers_enabled() -> bool:
-    return os.environ.get("IPO_ENABLE_SCRAPERS", "0") == "1"
+    return os.environ.get("IPO_ENABLE_SCRAPERS", "1") == "1"
 
 
 def ensure_dirs() -> None:

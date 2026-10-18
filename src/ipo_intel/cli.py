@@ -47,7 +47,7 @@ def _cmd_watch(a) -> int:
 
 def _cmd_collect_history(a) -> int:
     if not config.scrapers_enabled():
-        print("Set IPO_ENABLE_SCRAPERS=1 first (see README on scraping).", file=sys.stderr)
+        print("Live fetching is disabled; unset IPO_ENABLE_SCRAPERS or set it to 1 (see README on scraping).", file=sys.stderr)
         return 2
     try:
         n = ChittorgarhFetcher().collect_history(Store(), limit=a.limit, from_year=a.from_year)
@@ -132,7 +132,9 @@ def main(argv=None) -> int:
 
     r = sub.add_parser("run", help="analyse one IPO")
     r.add_argument("name")
-    r.add_argument("--scrape", action="store_true", help="fetch live data (needs IPO_ENABLE_SCRAPERS=1)")
+    r.add_argument("--scrape", action="store_true", help=argparse.SUPPRESS)
+    r.add_argument("--no-scrape", action="store_false", dest="scrape", help="skip live data fetching")
+    r.set_defaults(scrape=True)
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override a field, repeatable")
     r.add_argument("--save", action="store_true", help="persist --set values for this IPO")
     r.add_argument("--json", action="store_true")
