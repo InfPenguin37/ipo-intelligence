@@ -1,0 +1,85 @@
+import pandas as pd
+import pytest
+
+from conftest import make_history
+from ipo_intel.ml import load_models, predict_one, train_all
+from ipo_intel.ml.estimators import LargeModel, SmallModel
+from ipo_intel.ml.evaluate import loo_large, summarize, walk_forward_small
+from ipo_intel.ml.features import build_features
+
+# NOTE: these use SYNTHETIC data. They check the mechanics (shapes, ordering, learning direction),
+# not how well the models will do on real IPOs.
+
+
+def _split(df, cutoff=5000):
+    return df[df.issue_size_cr < cutoff].reset_index(drop=True), df[df.issue_size_cr >= cutoff].reset_index(drop=True)
+
+
+def test_small_model_quantiles_are_ordered():
+    small, _ = _split(make_history())
+    X, y = build_features(small), small["listing_gain_pct"]
+    pred = SmallModel().fit(X, y).predict(X)
+    assert list(pred.columns) == ["q10", "q50", "q90", "ridge"]
+    assert (pred["q10"] <= pred["q50"]).all() and (pred["q50"] <= pred["q90"]).all()
+
+
+def test_small_model_handles_missing_gmp_and_subscription():
+    small, _ = _split(make_history())
+    X = build_features(small)
+    model = SmallModel().fit(X, small["listing_gain_pct"])
+    blank = build_features(pd.DataFrame([{"issue_size_cr": 800, "price_band_high": 300}]))
+    assert model.predict(blank).notna().all(axis=None)
+
+
+def test_walk_forward_beats_raw_gmp_when_gmp_is_biased():
+    small, _ = _split(make_history(n_small=200))
+    res = walk_forward_small(small, min_train=60, step=20)
+    s = summarize(res, "q50", ridge=True)
+    assert s["n"] == 140
+    assert s["mae_q50"] < s["mae_raw_gmp"]
+    assert 0.5 < s["interval_coverage_80"] <= 1.0
+
+
+def test_large_model_with_no_data_is_the_prior():
+    m = LargeModel().fit(pd.DataFrame(columns=["price_band_high", "gmp_final", "listing_gain_pct"]))
+    assert m.k == 0.55 and m.sd == 5.0
+
+
+def test_large_model_learns_towards_truth_but_stays_shrunk():
+    _, large = _split(make_history(n_large=12))
+    m = LargeModel().fit(large)
+    assert abs(m.k - 0.40) < abs(0.55 - 0.40)  # moved from the prior towards the true 0.40
+    assert m.k > 0.40 - 0.02  # shrinkage keeps it at or above the truth here
+    assert m.sd >= 5.0
+
+
+def test_large_loo_runs():
+    _, large = _split(make_history(n_large=12))
+    res = loo_large(large)
+    assert len(res) == 12
+    assert {"q10", "q50", "q90", "k"} <= set(res.columns)
+
+
+def test_train_all_saves_models_and_predicts_both_tiers():
+    hist = make_history()
+    report = train_all(hist)
+    assert report["n_small"] == 150 and report["n_large"] == 12
+    assert "small_walk_forward" in report and "large_loo" in report
+    models = load_models()
+    assert models is not None
+
+    small_vals = {"issue_size_cr": 900, "price_band_high": 400, "gmp_final": 60, "gmp_open": 50, "sub_retail": 8}
+    large_vals = {"issue_size_cr": 30000, "price_band_high": 1119, "gmp_final": 221, "gmp_open": 172}
+    for vals, tier in ((small_vals, "small"), (large_vals, "large")):
+        p = predict_one(models, vals)
+        assert p["tier"] == tier
+        assert p["q10"] <= p["q50"] <= p["q90"]
+
+
+def test_too_little_small_data_falls_back_gracefully():
+    hist = make_history(n_small=10, n_large=4)
+    report = train_all(hist)
+    assert "small_note" in report
+    models = load_models()
+    assert predict_one(models, {"issue_size_cr": 900, "price_band_high": 400, "gmp_final": 60}) is None
+    assert predict_one(models, {"issue_size_cr": 30000, "price_band_high": 1119, "gmp_final": 221}) is not None
