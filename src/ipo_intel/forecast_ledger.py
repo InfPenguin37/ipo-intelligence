@@ -67,6 +67,18 @@ OUTCOME_PRICE_COLUMNS = (
 )
 
 
+def _ledger_path(path: Path | str | None) -> Path:
+    if path is not None:
+        return Path(path)
+    return Path(
+        getattr(
+            config,
+            "FORECAST_LEDGER_PATH",
+            config.ROOT / "research" / "forecast_ledger.csv",
+        )
+    )
+
+
 def build_forecast_record(report: dict) -> dict:
     if report.get("headline_gain") is None:
         raise ValueError("Cannot record a forecast without a predicted opening gain.")
@@ -128,7 +140,7 @@ def build_forecast_record(report: dict) -> dict:
 
 
 def load_forecasts(path: Path | str | None = None) -> pd.DataFrame:
-    ledger_path = Path(path) if path is not None else config.FORECAST_LEDGER_PATH
+    ledger_path = _ledger_path(path)
     if not ledger_path.exists():
         return pd.DataFrame(columns=FORECAST_COLUMNS)
     frame = pd.read_csv(ledger_path)
@@ -139,7 +151,7 @@ def load_forecasts(path: Path | str | None = None) -> pd.DataFrame:
 
 
 def append_forecast(report: dict, path: Path | str | None = None) -> dict:
-    ledger_path = Path(path) if path is not None else config.FORECAST_LEDGER_PATH
+    ledger_path = _ledger_path(path)
     record = build_forecast_record(report)
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     if ledger_path.exists():
@@ -166,7 +178,7 @@ def merge_uploaded_forecasts(
     if missing:
         raise ValueError(f"Uploaded CSV is missing columns: {', '.join(sorted(missing))}")
 
-    ledger_path = Path(path) if path is not None else config.FORECAST_LEDGER_PATH
+    ledger_path = _ledger_path(path)
     existing = load_forecasts(ledger_path)
     imported = uploaded[FORECAST_COLUMNS].copy()
     combined = existing.set_index("forecast_id").astype(object)

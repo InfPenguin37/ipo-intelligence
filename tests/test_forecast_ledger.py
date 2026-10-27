@@ -8,6 +8,7 @@ from ipo_intel.forecast_ledger import (
     load_forecasts,
     merge_uploaded_forecasts,
 )
+from ipo_intel import config
 
 
 def _report():
@@ -49,6 +50,16 @@ def test_append_and_load_forecasts_preserves_each_prediction(tmp_path):
     assert len(history) == 2
     assert first["forecast_id"] != second["forecast_id"]
     assert history["forecast_id"].tolist() == [first["forecast_id"], second["forecast_id"]]
+
+
+def test_default_ledger_path_works_when_config_path_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    monkeypatch.delattr(config, "FORECAST_LEDGER_PATH")
+
+    record = append_forecast(_report())
+
+    assert load_forecasts().loc[0, "forecast_id"] == record["forecast_id"]
+    assert (tmp_path / "research" / "forecast_ledger.csv").exists()
 
 
 def test_import_updates_actual_outcomes_without_losing_existing_forecasts(tmp_path):
