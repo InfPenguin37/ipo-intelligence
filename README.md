@@ -125,6 +125,9 @@ without the historical training database. A local model takes precedence after `
 For free hosting, deploy `src/ipo_intel/app.py` from GitHub using Streamlit Community Cloud. The bundled model is
 available there too, but its runtime-local SQLite history is not durable. See
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for setup steps and hosting caveats.
+The app also records each successful opening-gain forecast in a CSV ledger shown in the UI; download it regularly
+when using the hosted app. See [`docs/FORECAST_HISTORY.md`](docs/FORECAST_HISTORY.md) for saving outcomes and restoring
+the ledger.
 
 ## How the verdict is produced
 

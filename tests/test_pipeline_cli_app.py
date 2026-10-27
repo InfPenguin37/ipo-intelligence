@@ -280,6 +280,11 @@ def test_latest_gmp_becomes_final_only_on_last_pre_listing_day(tmp_path):
 
 def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
     monkeypatch.setenv("IPO_ENABLE_SCRAPERS", "0")
+    from ipo_intel import config
+    from ipo_intel.forecast_ledger import load_forecasts
+
+    ledger_path = tmp_path / "forecast_ledger.csv"
+    monkeypatch.setattr(config, "FORECAST_LEDGER_PATH", ledger_path)
 
     def app_store():
         store = Store(tmp_path / "app-history.db")
@@ -312,6 +317,11 @@ def test_web_app_runs_end_to_end(monkeypatch, tmp_path):
         "Source" in str(dataframe.proto) and "Snapshot time (UTC)" in str(dataframe.proto)
         for dataframe in at.dataframe
     )
+    assert "Prediction history" in [item.value for item in at.subheader]
+    forecasts = load_forecasts(ledger_path)
+    assert len(forecasts) == 1
+    assert forecasts.iloc[0]["ipo_name"] == "Jio Platforms"
+    assert forecasts.iloc[0]["predicted_open_gain_pct"] != ""
 
 
 def test_web_app_honors_deployment_secret_to_disable_live_fetch(monkeypatch):

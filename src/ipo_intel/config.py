@@ -12,6 +12,9 @@ MANUAL_DIR = DATA / "manual"
 MODELS_DIR = DATA / "models"
 PRETRAINED_MODELS_PATH = Path(__file__).with_name("pretrained_models.joblib")
 SEED_PATH = ROOT / "seed" / "ipo_cases.json"
+FORECAST_LEDGER_PATH = Path(
+    os.environ.get("IPO_FORECAST_LEDGER_PATH", ROOT / "research" / "forecast_ledger.csv")
+)
 
 # Issues at or above this size (Rs crore) are treated as "large" by the ML layer.
 LARGE_CUTOFF_CR = float(os.environ.get("IPO_LARGE_CUTOFF_CR", "5000"))

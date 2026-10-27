@@ -10,6 +10,12 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from ipo_intel import pipeline
 from ipo_intel.config import scrapers_enabled
 from ipo_intel.fetchers import ChittorgarhFetcher, FetchError
+from ipo_intel.forecast_ledger import (
+    DISPLAY_COLUMNS,
+    append_forecast,
+    load_forecasts,
+    merge_uploaded_forecasts,
+)
 from ipo_intel.report import DISCLAIMER
 from ipo_intel.schema import ALL_KEYS, MARKET_KEYS
 
@@ -250,6 +256,12 @@ if submitted:
             overrides=overrides,
         )
 
+    if rep.get("headline_gain") is not None:
+        try:
+            append_forecast(rep)
+        except (OSError, ValueError) as error:
+            st.error(f"Could not save this forecast to the prediction history: {error}")
+
     for warning in rep["warnings"]:
         st.warning(warning)
 
@@ -489,3 +501,54 @@ else:
         st.markdown("### Start with an IPO")
         st.write("Choose a company in the Research desk, then run an analysis to review listing signals and fundamentals.")
         st.caption("Your saved training model is used automatically. You can fetch live data or enter values manually.")
+
+st.subheader("Prediction history")
+st.caption(
+    "Forecasts are recorded with their inputs and sources. Download this CSV regularly: "
+    "the hosted app's local files can be reset. After an IPO lists, fill in actual listing prices "
+    "and upload the updated CSV; gains are calculated from the offer price."
+)
+history = load_forecasts()
+display_columns = [column for column in DISPLAY_COLUMNS if column in history]
+if history.empty:
+    st.info("No forecasts recorded yet.")
+else:
+    st.dataframe(
+        history[display_columns],
+        hide_index=True,
+        use_container_width=True,
+        column_config={
+            "predicted_open_gain_pct": st.column_config.NumberColumn("Predicted open gain", format="%+.1f%%"),
+            "heuristic_gain_pct": st.column_config.NumberColumn("Heuristic gain", format="%+.1f%%"),
+            "ml_q10": st.column_config.NumberColumn("ML 10th percentile", format="%+.1f%%"),
+            "ml_q50": st.column_config.NumberColumn("ML median", format="%+.1f%%"),
+            "ml_q90": st.column_config.NumberColumn("ML 90th percentile", format="%+.1f%%"),
+            "actual_listing_open_gain_pct": st.column_config.NumberColumn("Actual open gain", format="%+.1f%%"),
+            "actual_listing_close_gain_pct": st.column_config.NumberColumn("Actual close gain", format="%+.1f%%"),
+        },
+    )
+st.download_button(
+    "Download prediction history CSV",
+    data=history.to_csv(index=False).encode("utf-8"),
+    file_name="ipo_forecast_history.csv",
+    mime="text/csv",
+)
+
+with st.form("forecast_outcome_import_form"):
+    uploaded_ledger = st.file_uploader("Upload an updated prediction history CSV", type="csv")
+    import_submitted = st.form_submit_button("Import and update history")
+
+if import_submitted:
+    if uploaded_ledger is None:
+        st.error("Choose an updated prediction history CSV to import.")
+    else:
+        try:
+            imported = pd.read_csv(uploaded_ledger)
+            updated_history = merge_uploaded_forecasts(imported)
+        except (ValueError, pd.errors.ParserError, UnicodeDecodeError) as error:
+            st.error(f"Could not import prediction history: {error}")
+        except OSError as error:
+            st.error(f"Could not save the updated prediction history: {error}")
+        else:
+            st.success(f"Prediction history updated with {len(updated_history)} forecast rows.")
+            st.rerun()

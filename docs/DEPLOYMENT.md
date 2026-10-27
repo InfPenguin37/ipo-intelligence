@@ -30,9 +30,11 @@ pin the versions used to create the artifact or retrain it under the deployment 
 ## Persistence and limits
 
 The bundled model and seed data are part of the GitHub source and are available after every restart. The SQLite
-database, live GMP time series, saved overrides and cached fetch responses are written under `data/`, which is
-runtime-local storage on Community Cloud and must not be treated as persistent. A restart or rebuild can remove that
-history. Persistent user data would require an external database or storage service.
+database, live GMP time series, saved overrides, cached fetch responses and forecast ledger updates are runtime-local
+storage on Community Cloud and must not be treated as persistent. A restart or rebuild can remove that history.
+Download the prediction history CSV from the app regularly, and upload the latest copy after a restart to restore it.
+See [`FORECAST_HISTORY.md`](FORECAST_HISTORY.md) for recording actual listing outcomes. Persistent user data would
+require an external database or storage service.
 
 Community Cloud apps with no traffic for 12 hours go to sleep; a visitor can wake the app. CPU, memory and storage
 limits apply and may change. The free host is suitable for a personal/demo app, not a guarantee of always-on service
